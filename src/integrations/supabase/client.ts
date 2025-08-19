@@ -8,8 +8,10 @@ import type { Database } from "./types";
 // 1. Replace SUPABASE_URL with your project's API URL
 // 2. Replace SUPABASE_PUBLISHABLE_KEY with your project's anon key
 // You can find these in your Supabase project settings under API
-const SUPABASE_URL = "[YOUR_SUPABASE_PROJECT_URL]"; // Replace with your project's API URL
-const SUPABASE_PUBLISHABLE_KEY = "[YOUR_SUPABASE_ANON_KEY]"; // Replace with your project's anon key
+
+// Fallback values for development - replace with your actual Supabase credentials
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDQ5NzQwNzQsImV4cCI6MTk2MDU1MDA3NH0.placeholder";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
