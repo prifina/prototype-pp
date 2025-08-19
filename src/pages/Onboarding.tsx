@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useOnboarding } from '@/hooks/useOnboarding';
 import { PasscodeGate } from '@/components/onboarding/PasscodeGate';
 import { IntroExpectations } from '@/components/onboarding/IntroExpectations';
 import { OnboardingForm } from '@/components/onboarding/OnboardingForm';
@@ -15,11 +16,15 @@ export const Onboarding = () => {
   const [formData, setFormData] = useState<OnboardingFormData | null>(null);
   const [onboardingResult, setOnboardingResult] = useState<OnboardingResponse | null>(null);
   const navigate = useNavigate();
+  const { verifyPasscode, submitOnboarding, isLoading } = useOnboarding();
 
-  const handlePasscodeSuccess = (production: { id: string; name: string }) => {
-    setProductionData(production);
-    setCurrentStep('intro');
-  };
+    const handlePasscodeSuccess = async (passcode: string) => {
+      const production = await verifyPasscode(passcode);
+      if (production) {
+        setProductionData(production);
+        setCurrentStep('intro');
+      }
+    };
 
   const handleIntroComplete = () => {
     setCurrentStep('form');
@@ -30,21 +35,20 @@ export const Onboarding = () => {
     setCurrentStep('consent');
   };
 
-  const handleConsentComplete = () => {
-    setCurrentStep('confirmation');
-    // Here we would submit the complete form data to the backend
-    // For now, we'll simulate the response
-    setOnboardingResult({
-      seat_id: 'mock-seat-id',
-      wa_link: 'https://wa.me/1234567890?text=seat%3ASC-PROD-ABC12345-X',
-      qr_url: '/api/v1/seats/mock-seat-id/qr'
-    });
+  const handleConsentComplete = async () => {
+    if (!productionData || !formData) return;
+    
+    const result = await submitOnboarding(productionData.id, formData);
+    if (result) {
+      setOnboardingResult(result);
+      setCurrentStep('confirmation');
+    }
   };
 
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 'passcode':
-        return <PasscodeGate onSuccess={handlePasscodeSuccess} />;
+        return <PasscodeGate onSuccess={handlePasscodeSuccess} isLoading={isLoading} />;
       
       case 'intro':
         return (

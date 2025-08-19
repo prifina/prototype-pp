@@ -7,39 +7,34 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Lock } from 'lucide-react';
 
 interface PasscodeGateProps {
-  onSuccess: (production: { id: string; name: string }) => void;
+  onSuccess: (passcode: string) => Promise<void>;
+  isLoading?: boolean;
 }
 
-export const PasscodeGate: React.FC<PasscodeGateProps> = ({ onSuccess }) => {
+export const PasscodeGate: React.FC<PasscodeGateProps> = ({ onSuccess, isLoading: externalLoading }) => {
   const [passcode, setPasscode] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [internalLoading, setInternalLoading] = useState(false);
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(0);
 
+  const isLoading = externalLoading || internalLoading;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setInternalLoading(true);
     setError('');
 
     try {
-      // TODO: Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock validation - replace with actual backend call
-      if (passcode === 'DEMO123') {
-        onSuccess({ id: 'demo-production-id', name: 'Demo Production' });
-      } else {
-        setAttempts(prev => prev + 1);
-        if (attempts >= 2) {
-          setError('Too many failed attempts. Please wait 10 minutes before trying again.');
-        } else {
-          setError('Invalid passcode. Please try again.');
-        }
-      }
+      await onSuccess(passcode);
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      setAttempts(prev => prev + 1);
+      if (attempts >= 2) {
+        setError('Too many failed attempts. Please wait 10 minutes before trying again.');
+      } else {
+        setError('Invalid passcode. Please try again.');
+      }
     } finally {
-      setIsLoading(false);
+      setInternalLoading(false);
     }
   };
 
