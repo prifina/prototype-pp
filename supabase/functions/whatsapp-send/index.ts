@@ -1,7 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.9";
 
-// WhatsApp message sending service via Twilio
+// Import shared utilities
+import { formatTwilioPhone } from "../_shared/phoneUtils.ts";
+import { processTemplate, isValidTemplate, MESSAGE_TEMPLATES } from "../_shared/messageTemplates.ts";
+
+// Enhanced WhatsApp message sending service via Twilio
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -14,44 +18,17 @@ const corsHeaders = {
 // Twilio API configuration
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM') || 'whatsapp:+14155238886'; // Sandbox number
+const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM') || 'whatsapp:+14155238886';
 
-// Message templates for business-initiated messages
-const MESSAGE_TEMPLATES = {
-  onboarding_help_v1: {
-    category: 'UTILITY',
-    template: "Hi! To start, please complete onboarding at {{1}} and then message us here."
-  },
-  access_denied_v1: {
-    category: 'UTILITY', 
-    template: "This number isn't enabled for {{1}}. Please contact {{2}} to request access."
-  },
-  resume_session_v1: {
-    category: 'UTILITY',
-    template: "Shall we continue your coaching for {{1}}?",
-    buttons: ["Yes", "Later"]
-  },
-  seat_expiry_warn_v1: {
-    category: 'UTILITY',
-    template: "Your AI twin access for {{1}} expires in {{2}} days. Need help renewing?"
-  },
-  red_flag_escalation_v1: {
-    category: 'UTILITY',
-    template: "Your responses suggest a possible red flag. Please contact {{1}} immediately: {{2}}."
-  }
-};
-
-// Format phone number for Twilio
-function formatTwilioPhone(phone: string): string {
-  // Ensure it starts with whatsapp: prefix
-  const cleaned = phone.replace(/\D/g, '');
-  const e164 = cleaned.startsWith('1') ? `+${cleaned}` : `+1${cleaned}`;
-  return phone.startsWith('whatsapp:') ? phone : `whatsapp:${e164}`;
-}
-
-// Send message via Twilio API
+/**
+ * Send message via Twilio API with enhanced error handling
+ */
 async function sendTwilioMessage(to: string, body: any): Promise<any> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+  
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    throw new Error('Twilio credentials not configured');
+  }
   
   const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
   
@@ -60,15 +37,26 @@ async function sendTwilioMessage(to: string, body: any): Promise<any> {
   formData.append('To', to);
   
   if (typeof body === 'string') {
+    // Plain text message
     formData.append('Body', body);
   } else if (body.type === 'interactive') {
-    // Handle interactive messages (buttons, etc.)
-    formData.append('ContentSid', 'YOUR_CONTENT_SID'); // TODO: Set up content templates
-    if (body.interactive.body) {
-      formData.append('Body', body.interactive.body.text);
+    // Interactive message (buttons, etc.)
+    // For now, fall back to text with button labels
+    let textContent = body.interactive.body?.text || '';
+    
+    if (body.interactive.action?.buttons) {
+      textContent += '\n\nOptions:';
+      body.interactive.action.buttons.forEach((button: any, index: number) => {
+        textContent += `\n${index + 1}. ${button.reply?.title || button.title}`;
+      });
     }
+    
+    formData.append('Body', textContent);
   } else if (body.text) {
+    // Regular text message (within 24h window)
     formData.append('Body', body.text.body);
+  } else {
+    throw new Error('Invalid message body format');
   }
 
   const response = await fetch(url, {
@@ -79,22 +67,28 @@ async function sendTwilioMessage(to: string, body: any): Promise<any> {
     body: formData
   });
 
-  return await response.json();
-}
-
-// Process template with variables
-function processTemplate(templateKey: string, variables: string[]): string {
-  const template = MESSAGE_TEMPLATES[templateKey as keyof typeof MESSAGE_TEMPLATES];
-  if (!template) {
-    throw new Error(`Template not found: ${templateKey}`);
+  const result = await response.json();
+  
+  if (!response.ok) {
+    console.error('Twilio API error:', result);
+    throw new Error(`Twilio API error: ${result.message || 'Unknown error'}`);
   }
   
-  let message = template.template;
-  variables.forEach((variable, index) => {
-    message = message.replace(`{{${index + 1}}}`, variable);
-  });
-  
-  return message;
+  return result;
+}
+
+/**
+ * Find seat for message logging (best effort)
+ */
+async function findSeatByPhone(supabase: any, phoneE164: string): Promise<any> {
+  const { data: seat } = await supabase
+    .from('seats')
+    .select('id, status')
+    .eq('phone_e164', phoneE164)
+    .in('status', ['active', 'pending'])
+    .single();
+    
+  return seat;
 }
 
 serve(async (req) => {
@@ -108,7 +102,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { to, template, variables, type, text, interactive } = await req.json();
+    const requestBody = await req.json();
+    const { to, template, variables, type, text, interactive } = requestBody;
 
     if (!to) {
       return new Response(JSON.stringify({ error: 'Missing recipient phone number' }), {
@@ -117,15 +112,49 @@ serve(async (req) => {
       });
     }
 
-    const twilioPhone = formatTwilioPhone(to);
+    // Format phone number for Twilio
+    let twilioPhone: string;
+    try {
+      twilioPhone = formatTwilioPhone(to);
+    } catch (error) {
+      return new Response(JSON.stringify({ 
+        error: 'Invalid phone number format',
+        details: error.message 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     let messageBody: any;
     let templateUsed: string | null = null;
 
+    // Determine message type and content
     if (template) {
       // Business-initiated template message
+      if (!isValidTemplate(template)) {
+        return new Response(JSON.stringify({ 
+          error: 'Invalid template',
+          available_templates: Object.keys(MESSAGE_TEMPLATES)
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
       templateUsed = template;
-      const processedMessage = processTemplate(template, variables || []);
-      messageBody = processedMessage;
+      try {
+        const processedMessage = processTemplate(template, variables || []);
+        messageBody = processedMessage;
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          error: 'Template processing failed',
+          details: error.message 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
       
       console.log(`Sending template ${template} to ${twilioPhone}`);
     } else if (type === 'interactive') {
@@ -144,51 +173,56 @@ serve(async (req) => {
     }
 
     // Send via Twilio
-    const twilioResponse = await sendTwilioMessage(twilioPhone, messageBody);
-    
-    if (twilioResponse.error_code) {
-      console.error('Twilio API error:', twilioResponse);
+    let twilioResponse;
+    try {
+      twilioResponse = await sendTwilioMessage(twilioPhone, messageBody);
+    } catch (error) {
+      console.error('Failed to send via Twilio:', error);
       return new Response(JSON.stringify({ 
         error: 'Failed to send message',
-        details: twilioResponse 
+        details: error.message 
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Find seat for logging (optional, best effort)
-    const phoneE164 = to.replace('whatsapp:', '').replace(/\D/g, '');
-    const formattedPhone = phoneE164.startsWith('1') ? `+${phoneE164}` : `+1${phoneE164}`;
-    
-    const { data: seat } = await supabase
-      .from('seat')
-      .select('id')
-      .eq('phone_e164', formattedPhone)
-      .eq('status', 'active')
-      .single();
+    // Find seat for logging (best effort - don't fail if not found)
+    const seat = await findSeatByPhone(supabase, to.replace('whatsapp:', '').replace(/\D/g, ''));
 
     // Log the outbound message
     if (seat) {
-      await supabase.from('message_log').insert({
-        seat_id: seat.id,
-        direction: 'out',
-        channel: 'whatsapp',
-        payload: {
-          to: twilioPhone,
-          body: messageBody,
-          twilio_response: twilioResponse
-        },
-        template_used: templateUsed,
-        within_24h: !templateUsed, // Templates are for out-of-window, text is within window
-        provider_message_id: twilioResponse.sid
-      });
+      try {
+        await supabase.from('message_log').insert({
+          seat_id: seat.id,
+          direction: 'out',
+          channel: 'whatsapp',
+          payload: {
+            to: twilioPhone,
+            body: messageBody,
+            template_used: templateUsed,
+            twilio_response: {
+              sid: twilioResponse.sid,
+              status: twilioResponse.status
+            }
+          },
+          template_used: templateUsed,
+          within_24h: !templateUsed, // Templates are for out-of-window, text is within window
+          provider_message_id: twilioResponse.sid,
+          created_at: new Date().toISOString()
+        });
+      } catch (logError) {
+        console.warn('Failed to log outbound message:', logError);
+        // Don't fail the request if logging fails
+      }
     }
 
     return new Response(JSON.stringify({ 
       success: true,
       message_id: twilioResponse.sid,
-      status: twilioResponse.status
+      status: twilioResponse.status,
+      template_used: templateUsed,
+      to: twilioPhone
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -12,6 +12,7 @@ import { Search, Plus, MoreHorizontal, QrCode, Link, Ban, RotateCcw, Upload, Fil
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CSVImport } from './CSVImport';
 import { QRPackGenerator } from './QRPackGenerator';
+import { AuditLog } from './AuditLog';
 import { seatApi } from '@/services/seatApi';
 import { showApi } from '@/services/showApi';
 import { Seat, Show, SeatStatus } from '@/types/database';
@@ -261,7 +262,7 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="seats" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
             Seats ({stats.total})
@@ -273,6 +274,10 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
           <TabsTrigger value="qr-pack" className="flex items-center gap-2">
             <QrCode className="w-4 h-4" />
             QR Pack
+          </TabsTrigger>
+          <TabsTrigger value="audit-log" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Audit Log
           </TabsTrigger>
         </TabsList>
 
@@ -398,6 +403,10 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
             seats={seats}
             showName={currentShow?.show_name || 'Unknown Show'}
           />
+        </TabsContent>
+
+        <TabsContent value="audit-log" className="space-y-4">
+          <AuditLog showId={selectedProduction} />
         </TabsContent>
       </Tabs>
     </div>

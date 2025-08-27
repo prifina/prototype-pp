@@ -1,7 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.9";
 
-// Twilio webhook handler for WhatsApp messages
+// Import shared utilities
+import { normalizePhoneNumber, hashPhoneNumber, formatTwilioPhone } from "../_shared/phoneUtils.ts";
+import { 
+  validateTwilioSignature, 
+  checkRateLimit, 
+  checkIdempotency, 
+  markProcessed,
+  extractSeatCode 
+} from "../_shared/twilioUtils.ts";
+import { processTemplate, isValidTemplate } from "../_shared/messageTemplates.ts";
+
+// Enhanced Twilio webhook handler implementing "defense in depth" binding
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -11,26 +22,53 @@ const corsHeaders = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 };
 
-// Twilio signature validation
-function validateTwilioSignature(signature: string, url: string, params: Record<string, string>, authToken: string): boolean {
-  // TODO: Implement proper Twilio signature validation
-  // For now, return true for development
-  console.log('Validating Twilio signature:', { signature, url });
-  return true;
+/**
+ * Send WhatsApp message via our whatsapp-send function
+ */
+async function sendWhatsAppMessage(
+  baseUrl: string,
+  authorization: string,
+  to: string,
+  payload: any
+): Promise<Response> {
+  return await fetch(`${baseUrl}/functions/v1/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': authorization
+    },
+    body: JSON.stringify({ to, ...payload })
+  });
 }
 
-// Extract seat code from message body
-function extractSeatCode(message: string): string | null {
-  const seatCodePattern = /seat:([A-Z0-9-]+)/i;
-  const match = message.match(seatCodePattern);
-  return match ? match[1] : null;
+/**
+ * Check if seat has expired
+ */
+function isSeatExpired(seat: any): boolean {
+  if (!seat.expires_at) return false;
+  return new Date() > new Date(seat.expires_at);
 }
 
-// Format phone number to E164
-function formatPhoneE164(phone: string): string {
-  // Remove whatsapp: prefix and ensure + prefix
-  const cleaned = phone.replace('whatsapp:', '').replace(/\D/g, '');
-  return cleaned.startsWith('1') ? `+${cleaned}` : `+1${cleaned}`;
+/**
+ * Check if user is within 24-hour session window
+ */
+async function checkSessionWindow(supabase: any, seatId: string): Promise<boolean> {
+  const { data: lastMessage } = await supabase
+    .from('message_log')
+    .select('created_at')
+    .eq('seat_id', seatId)
+    .eq('direction', 'in')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!lastMessage) return true; // First message always allowed
+
+  const now = new Date();
+  const lastMessageTime = new Date(lastMessage.created_at);
+  const timeDiffHours = (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
+  
+  return timeDiffHours < 24;
 }
 
 serve(async (req) => {
@@ -48,14 +86,18 @@ serve(async (req) => {
     const formData = await req.formData();
     const twilioData = Object.fromEntries(formData.entries()) as Record<string, string>;
     
-    console.log('Received Twilio webhook:', twilioData);
+    console.log('Received Twilio webhook:', { 
+      from: twilioData.From, 
+      body: twilioData.Body?.substring(0, 50) + '...' 
+    });
 
-    // Validate Twilio signature
+    // Validate Twilio signature for security
     const signature = req.headers.get('x-twilio-signature') || '';
     const url = req.url;
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN') || '';
     
-    if (!validateTwilioSignature(signature, url, twilioData, authToken)) {
+    const isValidSignature = await validateTwilioSignature(signature, url, twilioData, authToken);
+    if (!isValidSignature) {
       console.warn('Invalid Twilio signature');
       return new Response('Forbidden', { status: 403, headers: corsHeaders });
     }
@@ -69,112 +111,183 @@ serve(async (req) => {
       NumMedia: numMedia
     } = twilioData;
 
-    const phoneE164 = formatPhoneE164(fromPhone);
+    // Normalize phone number using our robust utility
+    const phoneResult = normalizePhoneNumber(fromPhone);
+    if (!phoneResult.isValid) {
+      console.warn('Invalid phone number format:', fromPhone);
+      return new Response('Bad Request', { status: 400, headers: corsHeaders });
+    }
+    
+    const phoneE164 = phoneResult.e164!;
     const actualMessage = buttonText || messageBody || '';
 
-    // Log the inbound message
-    const messageLogEntry = {
-      direction: 'in',
-      channel: 'whatsapp',
+    // Check rate limiting
+    const rateLimitResult = checkRateLimit(phoneE164, 10, 60000); // 10 per minute
+    if (!rateLimitResult.allowed) {
+      console.warn('Rate limit exceeded for:', phoneE164);
+      
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
+          template: 'rate_limited_v1',
+          variables: []
+        }
+      );
+      
+      return new Response('Rate Limited', { status: 429, headers: corsHeaders });
+    }
+
+    // Check idempotency
+    const idempotencyResult = checkIdempotency(messageSid);
+    if (idempotencyResult.isProcessed) {
+      console.log('Message already processed:', messageSid);
+      return new Response('OK', { status: 200, headers: corsHeaders });
+    }
+    
+    if (!idempotencyResult.shouldProcess) {
+      console.log('Message processing skipped:', messageSid);
+      return new Response('OK', { status: 200, headers: corsHeaders });
+    }
+
+    // Log the inbound message structure
+    const baseMessageLog = {
+      direction: 'in' as const,
+      channel: 'whatsapp' as const,
       payload: twilioData,
-      within_24h: true, // Will be updated based on session logic
-      provider_message_id: messageSid
+      provider_message_id: messageSid,
+      created_at: new Date().toISOString()
     };
 
     // Check if this is a seat binding message
     const seatCode = extractSeatCode(actualMessage);
     
     if (seatCode) {
-      // Handle seat binding
       console.log('Processing seat binding for code:', seatCode);
       
-      // Find pending seat with this code
+      // DEFENSE IN DEPTH: Find pending seat with this code
       const { data: seat, error: seatError } = await supabase
-        .from('seat')
+        .from('seats')
         .select('*')
         .eq('seat_code', seatCode)
         .eq('status', 'pending')
         .single();
 
       if (seatError || !seat) {
-        console.warn('Seat not found or not pending:', seatCode);
+        console.warn('Seat not found or not pending:', seatCode, seatError?.message);
         
-        // Send onboarding help template
-        const helpResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': req.headers.get('authorization') || ''
-          },
-          body: JSON.stringify({
-            to: phoneE164,
-            template: 'onboarding_help_v1',
-            variables: [Deno.env.get('ONBOARDING_URL') || 'https://example.com/onboarding']
-          })
-        });
+        // Send seat not found template
+        await sendWhatsAppMessage(
+          req.url.split('/functions')[0],
+          req.headers.get('authorization') || '',
+          phoneE164,
+          {
+            template: 'seat_not_found_v1',
+            variables: [Deno.env.get('ONBOARDING_URL') || 'https://your-domain.com/onboarding']
+          }
+        );
 
+        markProcessed(messageSid);
         return new Response('OK', { status: 200, headers: corsHeaders });
       }
 
-      // Bind the seat to this phone number
+      // CRITICAL SECURITY CHECK: Phone must match pre-loaded phone for this seat
+      if (seat.phone_e164 !== phoneE164) {
+        console.warn('Phone mismatch for seat binding:', {
+          seatCode,
+          expected: seat.phone_e164,
+          actual: phoneE164,
+          originalInput: seat.phone_original_input
+        });
+        
+        // Send phone mismatch template - keep seat pending
+        await sendWhatsAppMessage(
+          req.url.split('/functions')[0],
+          req.headers.get('authorization') || '',
+          phoneE164,
+          {
+            template: 'seat_mismatch_v1',
+            variables: []
+          }
+        );
+
+        markProcessed(messageSid);
+        return new Response('OK', { status: 200, headers: corsHeaders });
+      }
+
+      // SUCCESSFUL BINDING: Both seat code and phone match
+      const bindingTime = new Date().toISOString();
       const { error: updateError } = await supabase
-        .from('seat')
+        .from('seats')
         .update({
-          phone_e164: phoneE164,
-          phone_hash: await crypto.subtle.digest('SHA-256', new TextEncoder().encode(phoneE164)).then(
-            buffer => Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('')
-          ),
+          wa_id: waId,
           status: 'active',
-          start_at: new Date().toISOString()
+          binding_completed_at: bindingTime,
+          start_at: bindingTime,
+          updated_at: bindingTime
         })
         .eq('id', seat.id);
 
       if (updateError) {
         console.error('Failed to bind seat:', updateError);
+        
+        await sendWhatsAppMessage(
+          req.url.split('/functions')[0],
+          req.headers.get('authorization') || '',
+          phoneE164,
+          {
+            template: 'service_unavailable_v1',
+            variables: []
+          }
+        );
+
         return new Response('Internal Error', { status: 500, headers: corsHeaders });
       }
 
-      // Log the binding
+      // Log the successful binding
       await supabase.from('message_log').insert({
         seat_id: seat.id,
-        ...messageLogEntry
+        within_24h: true,
+        ...baseMessageLog
       });
 
-      // Send welcome message with quick replies
-      const welcomeResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': req.headers.get('authorization') || ''
-        },
-        body: JSON.stringify({
-          to: phoneE164,
+      console.log('Seat successfully bound:', { seatId: seat.id, seatCode, phoneE164 });
+
+      // Send welcome message with interactive buttons
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
           type: 'interactive',
           interactive: {
             type: 'button',
             body: {
-              text: "Hi! I'm your Production Physio AI twin. I can help with sleep, nutrition on the road, warm-ups, recovery, and the quirks of show life. I'm a work in progress—no diagnosis or medication advice—but I'll offer practical suggestions and tell you when to escalate.\n\nWhat would you like help with today?"
+              text: "🎭 Hi! I'm your Production Physio AI twin. I can help with sleep, nutrition on the road, warm-ups, recovery, and the quirks of show life.\n\n⚠️ I'm a work in progress—no diagnosis or medication advice—but I'll offer practical suggestions and tell you when to escalate.\n\nWhat would you like help with today?"
             },
             action: {
               buttons: [
-                { type: 'reply', reply: { id: 'sleep', title: 'Sleep' } },
-                { type: 'reply', reply: { id: 'nutrition', title: 'Nutrition' } },
-                { type: 'reply', reply: { id: 'warmups', title: 'Warm-ups' } },
-                { type: 'reply', reply: { id: 'recovery', title: 'Recovery' } }
+                { type: 'reply', reply: { id: 'sleep', title: '😴 Sleep' } },
+                { type: 'reply', reply: { id: 'nutrition', title: '🍎 Nutrition' } },
+                { type: 'reply', reply: { id: 'warmups', title: '🏃 Warm-ups' } }
               ]
             }
           }
-        })
-      });
+        }
+      );
 
+      markProcessed(messageSid);
       return new Response('OK', { status: 200, headers: corsHeaders });
     }
 
-    // Handle regular conversation messages
-    // Find seat by phone number
+    // Handle regular conversation messages - find active seat by phone
     const { data: seat, error: seatError } = await supabase
-      .from('seat')
-      .select('*, profile(*)')
+      .from('seats')
+      .select(`
+        *,
+        profiles (*)
+      `)
       .eq('phone_e164', phoneE164)
       .eq('status', 'active')
       .single();
@@ -183,61 +296,112 @@ serve(async (req) => {
       console.warn('No active seat found for phone:', phoneE164);
       
       // Send access denied template
-      const accessDeniedResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': req.headers.get('authorization') || ''
-        },
-        body: JSON.stringify({
-          to: phoneE164,
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
           template: 'access_denied_v1',
-          variables: ['Production', 'stage management']
-        })
-      });
+          variables: ['your production', 'your company manager']
+        }
+      );
 
+      markProcessed(messageSid);
+      return new Response('OK', { status: 200, headers: corsHeaders });
+    }
+
+    // Check if seat has expired
+    if (isSeatExpired(seat)) {
+      console.warn('Seat expired for phone:', phoneE164);
+      
+      // Send expiry notice (only once)
+      const { data: existingExpiryMessage } = await supabase
+        .from('message_log')
+        .select('id')
+        .eq('seat_id', seat.id)
+        .eq('template_used', 'seat_expiry_notice_v1')
+        .single();
+
+      if (!existingExpiryMessage) {
+        await sendWhatsAppMessage(
+          req.url.split('/functions')[0],
+          req.headers.get('authorization') || '',
+          phoneE164,
+          {
+            template: 'seat_expiry_notice_v1',
+            variables: []
+          }
+        );
+        
+        // Log the expiry notice
+        await supabase.from('message_log').insert({
+          seat_id: seat.id,
+          direction: 'out',
+          channel: 'whatsapp',
+          template_used: 'seat_expiry_notice_v1',
+          within_24h: false,
+          ...baseMessageLog
+        });
+      }
+
+      markProcessed(messageSid);
+      return new Response('OK', { status: 200, headers: corsHeaders });
+    }
+
+    // Check if seat has been revoked
+    if (seat.status === 'revoked') {
+      console.warn('Seat revoked for phone:', phoneE164);
+      
+      // Send revoked notice (only once)
+      const { data: existingRevokedMessage } = await supabase
+        .from('message_log')
+        .select('id')
+        .eq('seat_id', seat.id)
+        .eq('template_used', 'seat_revoked_v1')
+        .single();
+
+      if (!existingRevokedMessage) {
+        await sendWhatsAppMessage(
+          req.url.split('/functions')[0],
+          req.headers.get('authorization') || '',
+          phoneE164,
+          {
+            template: 'seat_revoked_v1',
+            variables: []
+          }
+        );
+      }
+
+      markProcessed(messageSid);
       return new Response('OK', { status: 200, headers: corsHeaders });
     }
 
     // Check 24-hour session window
-    const { data: lastMessage } = await supabase
-      .from('message_log')
-      .select('created_at')
-      .eq('seat_id', seat.id)
-      .eq('direction', 'in')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    const now = new Date();
-    const within24Hours = lastMessage 
-      ? (now.getTime() - new Date(lastMessage.created_at).getTime()) < 24 * 60 * 60 * 1000
-      : true;
-
+    const within24Hours = await checkSessionWindow(supabase, seat.id);
+    
     if (!within24Hours) {
+      console.log('Outside 24-hour window, sending resume session template');
+      
       // Send resume session template
-      const resumeResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': req.headers.get('authorization') || ''
-        },
-        body: JSON.stringify({
-          to: phoneE164,
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
           template: 'resume_session_v1',
-          variables: [seat.profile?.show_name || 'your production']
-        })
-      });
+          variables: [seat.profiles?.[0]?.show_name || 'your production']
+        }
+      );
 
-      // Wait for user to respond before continuing conversation
+      markProcessed(messageSid);
       return new Response('OK', { status: 200, headers: corsHeaders });
     }
 
-    // Log the message
+    // Log the regular message
     await supabase.from('message_log').insert({
       seat_id: seat.id,
       within_24h: within24Hours,
-      ...messageLogEntry
+      ...baseMessageLog
     });
 
     // Process with AI Twin
@@ -252,34 +416,47 @@ serve(async (req) => {
         message: actualMessage,
         channel: 'whatsapp',
         user_context: {
-          name: seat.profile?.name,
-          role: seat.profile?.role,
-          show_name: seat.profile?.show_name,
-          tour_or_resident: seat.profile?.tour_or_resident,
-          goals: seat.profile?.goals,
-          sleep_env: seat.profile?.sleep_env,
-          food_constraints: seat.profile?.food_constraints,
-          injuries_notes: seat.profile?.injuries_notes
+          name: seat.profiles?.[0]?.name,
+          role: seat.profiles?.[0]?.role,
+          show_name: seat.profiles?.[0]?.show_name,
+          tour_or_resident: seat.profiles?.[0]?.tour_or_resident,
+          goals: seat.profiles?.[0]?.goals,
+          sleep_env: seat.profiles?.[0]?.sleep_env,
+          food_constraints: seat.profiles?.[0]?.food_constraints,
+          injuries_notes: seat.profiles?.[0]?.injuries_notes
         }
       })
     });
 
     const aiResult = await aiResponse.json();
 
-    // Send AI response back to user
-    const sendResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': req.headers.get('authorization') || ''
-      },
-      body: JSON.stringify({
-        to: phoneE164,
-        type: 'text',
-        text: { body: aiResult.response }
-      })
-    });
+    // Check for red flag escalation in AI response
+    if (aiResult.red_flag) {
+      console.warn('Red flag detected for seat:', seat.id);
+      
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
+          template: 'red_flag_escalation_v1',
+          variables: ['medical emergency services', '999 (UK) or 911 (US)']
+        }
+      );
+    } else {
+      // Send AI response back to user
+      await sendWhatsAppMessage(
+        req.url.split('/functions')[0],
+        req.headers.get('authorization') || '',
+        phoneE164,
+        {
+          type: 'text',
+          text: { body: aiResult.response }
+        }
+      );
+    }
 
+    markProcessed(messageSid);
     return new Response('OK', { status: 200, headers: corsHeaders });
 
   } catch (error) {
