@@ -16,24 +16,10 @@ import { loadingMessageId } from "@/utils";
 const Index = () => {
   const { twinName } = useParams<{ twinName: string }>();
 
-  // If no twin name in URL, show a landing page or default state
+  // Redirect to onboarding if no twin name provided
   if (!twinName) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-        <Header />
-        <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
-          <Card className="max-w-md mx-auto p-6 text-center">
-            <MessageCircle className="h-12 w-12 mx-auto mb-4 text-blue-500" />
-            <h1 className="text-2xl font-bold mb-2">Welcome to AI Twin</h1>
-            <p className="text-gray-600 mb-4">
-              To chat with an AI twin, visit a URL like /twinname
-            </p>
-            <p className="text-sm text-gray-500">Example: /valto</p>
-          </Card>
-        </main>
-        <Footer />
-      </div>
-    );
+    window.location.href = '/';
+    return null;
   }
 
   const { profile, session, loading, error } = useTwinData(twinName);

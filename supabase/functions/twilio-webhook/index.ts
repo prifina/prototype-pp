@@ -1,466 +1,325 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.9";
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
+import { corsHeaders, validateTwilioSignature, checkRateLimit, checkIdempotency, markProcessed, extractSeatCode } from '../_shared/twilioUtils.ts';
+import { normalizePhoneNumber, formatPhoneForStorage } from '../_shared/phoneUtils.ts';
+import { getMessageTemplate, MessageType } from '../_shared/messageTemplates.ts';
 
-// Import shared utilities
-import { normalizePhoneNumber, hashPhoneNumber, formatTwilioPhone } from "../_shared/phoneUtils.ts";
-import { 
-  validateTwilioSignature, 
-  checkRateLimit, 
-  checkIdempotency, 
-  markProcessed,
-  extractSeatCode 
-} from "../_shared/twilioUtils.ts";
-import { processTemplate, isValidTemplate } from "../_shared/messageTemplates.ts";
-
-// Enhanced Twilio webhook handler implementing "defense in depth" binding
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "X-XSS-Protection": "1; mode=block",
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-};
-
-/**
- * Send WhatsApp message via our whatsapp-send function
- */
-async function sendWhatsAppMessage(
-  baseUrl: string,
-  authorization: string,
-  to: string,
-  payload: any
-): Promise<Response> {
-  return await fetch(`${baseUrl}/functions/v1/whatsapp-send`, {
+// Helper function to send WhatsApp messages
+async function sendWhatsAppMessage(baseUrl: string, authorization: string, to: string, payload: any): Promise<Response> {
+  return fetch(`${baseUrl}/functions/v1/whatsapp-send`, {
     method: 'POST',
     headers: {
+      'Authorization': authorization,
       'Content-Type': 'application/json',
-      'Authorization': authorization
     },
-    body: JSON.stringify({ to, ...payload })
+    body: JSON.stringify({ to, ...payload }),
   });
 }
 
-/**
- * Check if seat has expired
- */
+// Check if seat is expired
 function isSeatExpired(seat: any): boolean {
   if (!seat.expires_at) return false;
-  return new Date() > new Date(seat.expires_at);
+  return new Date(seat.expires_at) < new Date();
 }
 
-/**
- * Check if user is within 24-hour session window
- */
+// Check 24-hour session window
 async function checkSessionWindow(supabase: any, seatId: string): Promise<boolean> {
-  const { data: lastMessage } = await supabase
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  
+  const { data } = await supabase
     .from('message_log')
     .select('created_at')
     .eq('seat_id', seatId)
-    .eq('direction', 'in')
+    .eq('direction', 'inbound')
+    .gte('created_at', twentyFourHoursAgo.toISOString())
     .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!lastMessage) return true; // First message always allowed
-
-  const now = new Date();
-  const lastMessageTime = new Date(lastMessage.created_at);
-  const timeDiffHours = (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
-  
-  return timeDiffHours < 24;
+    .limit(1);
+    
+  return data && data.length > 0;
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
-    // Parse Twilio webhook payload
     const formData = await req.formData();
-    const twilioData = Object.fromEntries(formData.entries()) as Record<string, string>;
-    
-    console.log('Received Twilio webhook:', { 
-      from: twilioData.From, 
-      body: twilioData.Body?.substring(0, 50) + '...' 
-    });
-
-    // Validate Twilio signature for security
-    const signature = req.headers.get('x-twilio-signature') || '';
+    const twilioSignature = req.headers.get('X-Twilio-Signature') || '';
     const url = req.url;
+
+    // Extract form data
+    const params: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      params[key] = value.toString();
+    }
+
+    // Validate Twilio signature
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN') || '';
+    const isValidSignature = await validateTwilioSignature(twilioSignature, url, params, authToken);
     
-    const isValidSignature = await validateTwilioSignature(signature, url, twilioData, authToken);
     if (!isValidSignature) {
-      console.warn('Invalid Twilio signature');
-      return new Response('Forbidden', { status: 403, headers: corsHeaders });
+      console.error('Invalid Twilio signature');
+      return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
 
-    const {
-      From: fromPhone,
-      WaId: waId,
-      Body: messageBody,
-      ButtonText: buttonText,
-      MessageSid: messageSid,
-      NumMedia: numMedia
-    } = twilioData;
-
-    // Normalize phone number using our robust utility
-    const phoneResult = normalizePhoneNumber(fromPhone);
-    if (!phoneResult.isValid) {
-      console.warn('Invalid phone number format:', fromPhone);
-      return new Response('Bad Request', { status: 400, headers: corsHeaders });
-    }
-    
-    const phoneE164 = phoneResult.e164!;
-    const actualMessage = buttonText || messageBody || '';
-
-    // Check rate limiting
-    const rateLimitResult = checkRateLimit(phoneE164, 10, 60000); // 10 per minute
-    if (!rateLimitResult.allowed) {
-      console.warn('Rate limit exceeded for:', phoneE164);
-      
-      await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          template: 'rate_limited_v1',
-          variables: []
-        }
-      );
-      
-      return new Response('Rate Limited', { status: 429, headers: corsHeaders });
-    }
+    const messageBody = params.Body?.trim() || '';
+    const fromNumber = params.From?.replace('whatsapp:', '') || '';
+    const messageSid = params.MessageSid || '';
 
     // Check idempotency
     const idempotencyResult = checkIdempotency(messageSid);
     if (idempotencyResult.isProcessed) {
-      console.log('Message already processed:', messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      return new Response('Already processed', { status: 200, headers: corsHeaders });
     }
-    
     if (!idempotencyResult.shouldProcess) {
-      console.log('Message processing skipped:', messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      return new Response('Rate limited', { status: 429, headers: corsHeaders });
     }
 
-    // Log the inbound message structure
-    const baseMessageLog = {
-      direction: 'in' as const,
-      channel: 'whatsapp' as const,
-      payload: twilioData,
-      provider_message_id: messageSid,
-      created_at: new Date().toISOString()
-    };
+    // Normalize phone number
+    const normalizedPhone = normalizePhoneNumber(fromNumber);
+    if (!normalizedPhone) {
+      console.error('Invalid phone number format:', fromNumber);
+      return new Response('Invalid phone number', { status: 400, headers: corsHeaders });
+    }
 
-    // Check if this is a seat binding message
-    const seatCode = extractSeatCode(actualMessage);
+    const phoneForStorage = formatPhoneForStorage(normalizedPhone);
+
+    // Rate limiting check
+    const rateLimit = checkRateLimit(phoneForStorage);
+    if (!rateLimit.allowed) {
+      console.log('Rate limit exceeded for phone:', phoneForStorage);
+      return new Response('Rate limit exceeded', { status: 429, headers: corsHeaders });
+    }
+
+    // Extract seat binding code
+    const seatCode = extractSeatCode(messageBody);
     
     if (seatCode) {
       console.log('Processing seat binding for code:', seatCode);
       
-      // DEFENSE IN DEPTH: Find pending seat with this code
-      const { data: seat, error: seatError } = await supabase
+      // Find the seat by code
+      const { data: seat } = await supabase
         .from('seats')
         .select('*')
-        .eq('seat_code', seatCode)
-        .eq('status', 'pending')
+        .eq('seat_code', seatCode.toUpperCase())
+        .eq('status', 'active')
         .single();
 
-      if (seatError || !seat) {
-        console.warn('Seat not found or not pending:', seatCode, seatError?.message);
-        
-        // Send seat not found template
+      if (!seat) {
+        const template = getMessageTemplate(MessageType.SEAT_NOT_FOUND);
         await sendWhatsAppMessage(
-          req.url.split('/functions')[0],
-          req.headers.get('authorization') || '',
-          phoneE164,
-          {
-            template: 'seat_not_found_v1',
-            variables: [Deno.env.get('ONBOARDING_URL') || 'https://your-domain.com/onboarding']
-          }
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { message: template.body }
         );
-
-        markProcessed(messageSid);
-        return new Response('OK', { status: 200, headers: corsHeaders });
+        return new Response('Seat not found', { status: 200, headers: corsHeaders });
       }
 
-      // CRITICAL SECURITY CHECK: Phone must match pre-loaded phone for this seat
-      if (seat.phone_e164 !== phoneE164) {
-        console.warn('Phone mismatch for seat binding:', {
-          seatCode,
-          expected: seat.phone_e164,
-          actual: phoneE164,
-          originalInput: seat.phone_original_input
-        });
-        
-        // Send phone mismatch template - keep seat pending
+      // Check if seat is expired
+      if (isSeatExpired(seat)) {
+        const template = getMessageTemplate(MessageType.SEAT_EXPIRED);
         await sendWhatsAppMessage(
-          req.url.split('/functions')[0],
-          req.headers.get('authorization') || '',
-          phoneE164,
-          {
-            template: 'seat_mismatch_v1',
-            variables: []
-          }
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { message: template.body }
         );
-
-        markProcessed(messageSid);
-        return new Response('OK', { status: 200, headers: corsHeaders });
+        return new Response('Seat expired', { status: 200, headers: corsHeaders });
       }
 
-      // SUCCESSFUL BINDING: Both seat code and phone match
-      const bindingTime = new Date().toISOString();
+      // Check if seat already bound to different phone
+      if (seat.phone_number && seat.phone_number !== phoneForStorage) {
+        const template = getMessageTemplate(MessageType.SEAT_ALREADY_BOUND);
+        await sendWhatsAppMessage(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { message: template.body }
+        );
+        return new Response('Seat already bound', { status: 200, headers: corsHeaders });
+      }
+
+      // Bind seat to phone number
       const { error: updateError } = await supabase
         .from('seats')
-        .update({
-          wa_id: waId,
-          status: 'active',
-          binding_completed_at: bindingTime,
-          start_at: bindingTime,
-          updated_at: bindingTime
+        .update({ 
+          phone_number: phoneForStorage,
+          bound_at: new Date().toISOString()
         })
         .eq('id', seat.id);
 
       if (updateError) {
-        console.error('Failed to bind seat:', updateError);
-        
+        console.error('Error binding seat:', updateError);
+        const template = getMessageTemplate(MessageType.SYSTEM_ERROR);
         await sendWhatsAppMessage(
-          req.url.split('/functions')[0],
-          req.headers.get('authorization') || '',
-          phoneE164,
-          {
-            template: 'service_unavailable_v1',
-            variables: []
-          }
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { message: template.body }
         );
-
-        return new Response('Internal Error', { status: 500, headers: corsHeaders });
+        return new Response('Database error', { status: 500, headers: corsHeaders });
       }
 
-      // Log the successful binding
+      // Log the binding
       await supabase.from('message_log').insert({
         seat_id: seat.id,
-        within_24h: true,
-        ...baseMessageLog
+        phone_number: phoneForStorage,
+        direction: 'inbound',
+        message_body: messageBody,
+        message_sid: messageSid,
+        message_type: 'binding'
       });
 
-      console.log('Seat successfully bound:', { seatId: seat.id, seatCode, phoneE164 });
-
-      // Send welcome message with interactive buttons
+      // Send success message
+      const template = getMessageTemplate(MessageType.SEAT_BOUND_SUCCESS, { 
+        profileName: seat.profile_name || 'AI Twin'
+      });
+      
       await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          type: 'interactive',
-          interactive: {
-            type: 'button',
-            body: {
-              text: "🎭 Hi! I'm your Production Physio AI twin. I can help with sleep, nutrition on the road, warm-ups, recovery, and the quirks of show life.\n\n⚠️ I'm a work in progress—no diagnosis or medication advice—but I'll offer practical suggestions and tell you when to escalate.\n\nWhat would you like help with today?"
-            },
-            action: {
-              buttons: [
-                { type: 'reply', reply: { id: 'sleep', title: '😴 Sleep' } },
-                { type: 'reply', reply: { id: 'nutrition', title: '🍎 Nutrition' } },
-                { type: 'reply', reply: { id: 'warmups', title: '🏃 Warm-ups' } }
-              ]
-            }
-          }
-        }
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
       );
 
       markProcessed(messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      return new Response('Seat bound successfully', { status: 200, headers: corsHeaders });
     }
 
-    // Handle regular conversation messages - find active seat by phone
-    const { data: seat, error: seatError } = await supabase
+    // Handle regular chat messages - find active seat for this phone
+    const { data: activeSeat } = await supabase
       .from('seats')
-      .select(`
-        *,
-        profiles (*)
-      `)
-      .eq('phone_e164', phoneE164)
+      .select('*')
+      .eq('phone_number', phoneForStorage)
       .eq('status', 'active')
       .single();
 
-    if (seatError || !seat) {
-      console.warn('No active seat found for phone:', phoneE164);
-      
-      // Send access denied template
+    if (!activeSeat) {
+      const template = getMessageTemplate(MessageType.NO_ACTIVE_SEAT);
       await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          template: 'access_denied_v1',
-          variables: ['your production', 'your company manager']
-        }
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
       );
-
-      markProcessed(messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      return new Response('No active seat', { status: 200, headers: corsHeaders });
     }
 
-    // Check if seat has expired
-    if (isSeatExpired(seat)) {
-      console.warn('Seat expired for phone:', phoneE164);
-      
-      // Send expiry notice (only once)
-      const { data: existingExpiryMessage } = await supabase
-        .from('message_log')
-        .select('id')
-        .eq('seat_id', seat.id)
-        .eq('template_used', 'seat_expiry_notice_v1')
-        .single();
+    // Check if seat is expired
+    if (isSeatExpired(activeSeat)) {
+      // Update seat status to expired
+      await supabase
+        .from('seats')
+        .update({ status: 'expired' })
+        .eq('id', activeSeat.id);
 
-      if (!existingExpiryMessage) {
-        await sendWhatsAppMessage(
-          req.url.split('/functions')[0],
-          req.headers.get('authorization') || '',
-          phoneE164,
-          {
-            template: 'seat_expiry_notice_v1',
-            variables: []
-          }
-        );
-        
-        // Log the expiry notice
-        await supabase.from('message_log').insert({
-          seat_id: seat.id,
-          direction: 'out',
-          channel: 'whatsapp',
-          template_used: 'seat_expiry_notice_v1',
-          within_24h: false,
-          ...baseMessageLog
-        });
-      }
-
-      markProcessed(messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      const template = getMessageTemplate(MessageType.SEAT_EXPIRED);
+      await sendWhatsAppMessage(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
+      );
+      return new Response('Seat expired', { status: 200, headers: corsHeaders });
     }
 
-    // Check if seat has been revoked
-    if (seat.status === 'revoked') {
-      console.warn('Seat revoked for phone:', phoneE164);
-      
-      // Send revoked notice (only once)
-      const { data: existingRevokedMessage } = await supabase
-        .from('message_log')
-        .select('id')
-        .eq('seat_id', seat.id)
-        .eq('template_used', 'seat_revoked_v1')
-        .single();
-
-      if (!existingRevokedMessage) {
-        await sendWhatsAppMessage(
-          req.url.split('/functions')[0],
-          req.headers.get('authorization') || '',
-          phoneE164,
-          {
-            template: 'seat_revoked_v1',
-            variables: []
-          }
-        );
-      }
-
-      markProcessed(messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+    // Check if seat is revoked
+    if (activeSeat.status === 'revoked') {
+      const template = getMessageTemplate(MessageType.SEAT_REVOKED);
+      await sendWhatsAppMessage(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
+      );
+      return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
 
     // Check 24-hour session window
-    const within24Hours = await checkSessionWindow(supabase, seat.id);
-    
-    if (!within24Hours) {
-      console.log('Outside 24-hour window, sending resume session template');
-      
-      // Send resume session template
+    const withinSessionWindow = await checkSessionWindow(supabase, activeSeat.id);
+    if (!withinSessionWindow) {
+      const template = getMessageTemplate(MessageType.SESSION_EXPIRED);
       await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          template: 'resume_session_v1',
-          variables: [seat.profiles?.[0]?.show_name || 'your production']
-        }
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
       );
-
-      markProcessed(messageSid);
-      return new Response('OK', { status: 200, headers: corsHeaders });
+      return new Response('Session expired', { status: 200, headers: corsHeaders });
     }
 
-    // Log the regular message
+    // Log incoming message
     await supabase.from('message_log').insert({
-      seat_id: seat.id,
-      within_24h: within24Hours,
-      ...baseMessageLog
+      seat_id: activeSeat.id,
+      phone_number: phoneForStorage,
+      direction: 'inbound',
+      message_body: messageBody,
+      message_sid: messageSid,
+      message_type: 'chat'
     });
 
-    // Process with AI Twin
-    const aiResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/ai-twin-chat`, {
+    // Forward to AI chat service
+    const chatResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ai-twin-chat`, {
       method: 'POST',
       headers: {
+        'Authorization': req.headers.get('Authorization') ?? '',
         'Content-Type': 'application/json',
-        'Authorization': req.headers.get('authorization') || ''
       },
       body: JSON.stringify({
-        seat_id: seat.id,
-        message: actualMessage,
-        channel: 'whatsapp',
-        user_context: {
-          name: seat.profiles?.[0]?.name,
-          role: seat.profiles?.[0]?.role,
-          show_name: seat.profiles?.[0]?.show_name,
-          tour_or_resident: seat.profiles?.[0]?.tour_or_resident,
-          goals: seat.profiles?.[0]?.goals,
-          sleep_env: seat.profiles?.[0]?.sleep_env,
-          food_constraints: seat.profiles?.[0]?.food_constraints,
-          injuries_notes: seat.profiles?.[0]?.injuries_notes
-        }
-      })
+        message: messageBody,
+        twinId: activeSeat.twin_id,
+        sessionId: activeSeat.id, // Use seat ID as session ID
+        phoneNumber: phoneForStorage
+      }),
     });
 
-    const aiResult = await aiResponse.json();
-
-    // Check for red flag escalation in AI response
-    if (aiResult.red_flag) {
-      console.warn('Red flag detected for seat:', seat.id);
-      
+    if (!chatResponse.ok) {
+      console.error('AI chat service error:', await chatResponse.text());
+      const template = getMessageTemplate(MessageType.SYSTEM_ERROR);
       await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          template: 'red_flag_escalation_v1',
-          variables: ['medical emergency services', '999 (UK) or 911 (US)']
-        }
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: template.body }
       );
-    } else {
-      // Send AI response back to user
-      await sendWhatsAppMessage(
-        req.url.split('/functions')[0],
-        req.headers.get('authorization') || '',
-        phoneE164,
-        {
-          type: 'text',
-          text: { body: aiResult.response }
-        }
-      );
+      return new Response('AI service error', { status: 500, headers: corsHeaders });
     }
 
+    const aiResponse = await chatResponse.json();
+    
+    // Log AI response
+    await supabase.from('message_log').insert({
+      seat_id: activeSeat.id,
+      phone_number: phoneForStorage,
+      direction: 'outbound',
+      message_body: aiResponse.message,
+      message_type: 'chat'
+    });
+
+    // Send AI response back to user
+    await sendWhatsAppMessage(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      req.headers.get('Authorization') ?? '',
+      fromNumber,
+      { message: aiResponse.message }
+    );
+
     markProcessed(messageSid);
-    return new Response('OK', { status: 200, headers: corsHeaders });
+    return new Response('Message processed', { status: 200, headers: corsHeaders });
 
   } catch (error) {
-    console.error('Error processing Twilio webhook:', error);
-    return new Response('Internal Server Error', { status: 500, headers: corsHeaders });
+    console.error('Webhook error:', error);
+    return new Response('Internal server error', { 
+      status: 500, 
+      headers: corsHeaders 
+    });
   }
 });
