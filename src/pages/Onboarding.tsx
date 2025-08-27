@@ -96,7 +96,7 @@ export const Onboarding = () => {
         <div className="mb-8 text-center">
           <div className="flex justify-center mb-4">
             <img 
-              src={logoImage} 
+              src="/lovable-uploads/f4b250ea-3fb1-453f-a9aa-f4b41cabede3.png" 
               alt="Production Physiotherapy Logo" 
               className="h-16 w-16"
             />
