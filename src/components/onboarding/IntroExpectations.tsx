@@ -16,9 +16,9 @@ export const IntroExpectations: React.FC<IntroExpectationsProps> = ({
   return (
     <Card className="w-full">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome to Your AI Physio Twin</CardTitle>
+        <CardTitle className="text-2xl">Production Physiotherapy AI Performance Assistant</CardTitle>
         <CardDescription>
-          Get personalized support for {productionName}
+          Welcome to your AI Performance Assistant from Production Physiotherapy brought to you by {productionName}
         </CardDescription>
       </CardHeader>
       
@@ -26,22 +26,35 @@ export const IntroExpectations: React.FC<IntroExpectationsProps> = ({
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            <strong>Work in Progress:</strong> This AI assistant is continuously improving. 
-            Your feedback helps us provide better support for performers like you.
+            <strong>Work in Progress:</strong> This AI Performance Assistant is continually improving. 
+            Your questions and feedback helps us provide better support for not only yourself but the community.
           </AlertDescription>
         </Alert>
 
         <div className="space-y-4">
           <div className="flex items-start space-x-3">
+            <Info className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-foreground">What I need from you:</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                We need to collect some information about you as a performing athlete, what you struggle with when it comes to your performing life, your injury history and what you might want to work on. Rest assured that this information is not shared with Production or anyone else, it creates your context that allows us to filter the knowledge base we have specifically to you and your needs.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start space-x-3">
             <Shield className="w-5 h-5 text-green-600 mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-foreground">What I Can Help With</h3>
+              <h3 className="font-semibold text-foreground">What I can Help with:</h3>
               <ul className="text-sm text-muted-foreground mt-1 space-y-1">
-                <li>• Sleep optimization for show schedules</li>
-                <li>• Nutrition guidance for touring and resident performers</li>
-                <li>• Warm-up and recovery routines</li>
-                <li>• Managing performance-related challenges</li>
-                <li>• Adapting to hotel and venue environments</li>
+                <li>• Upgrade your knowledge for all things sleep, nutrition and exercise</li>
+                <li>• Give you recipes used in elite sports like Formula One and Premier League Football</li>
+                <li>• Help you plan and establish new habits</li>
+                <li>• Set up reminders to help you establish new habits</li>
+                <li>• Help you build your warm up to make it appropriate for your context</li>
+                <li>• Give you tools and strategies to improve sleep</li>
+                <li>• Prepare you for touring and its unique challenges</li>
+                <li>• And so much more</li>
               </ul>
             </div>
           </div>
@@ -51,10 +64,10 @@ export const IntroExpectations: React.FC<IntroExpectationsProps> = ({
             <div>
               <h3 className="font-semibold text-foreground">Important Boundaries</h3>
               <ul className="text-sm text-muted-foreground mt-1 space-y-1">
-                <li>• I cannot diagnose medical conditions</li>
-                <li>• I don't provide medication advice</li>
+                <li>• I cannot diagnose medical conditions or injuries</li>
+                <li>• I do not provide medication advice</li>
                 <li>• For injuries or health concerns, I'll direct you to appropriate medical professionals</li>
-                <li>• All guidance is general and should complement professional medical care</li>
+                <li>• All guidance should complement professional medical care and not replace it</li>
               </ul>
             </div>
           </div>

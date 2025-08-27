@@ -46,9 +46,10 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ onSuccess, isLoading
         <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-6 h-6 text-primary" />
         </div>
-        <CardTitle>Enter Production Passcode</CardTitle>
+        <CardTitle>Production Physiotherapy AI Performance Assistant</CardTitle>
         <CardDescription>
-          Enter the passcode provided by your production team to begin onboarding
+          Enter your Production's Passcode<br/>
+          Enter the passcode that production have given you to begin our onboarding process
         </CardDescription>
       </CardHeader>
       

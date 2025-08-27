@@ -92,11 +92,24 @@ export const Onboarding = () => {
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-2xl mx-auto">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              Production Physio AI Twin
-            </h1>
-            <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
+        <div className="mb-8 text-center">
+          <div className="flex justify-center mb-4">
+            <img 
+              src="/lovable-uploads/28eb4092-896e-4ebd-a3a1-60f36f77edb4.png" 
+              alt="Production Physiotherapy Logo" 
+              className="h-16 w-16"
+            />
+          </div>
+          <h1 className="text-3xl font-bold text-foreground mb-2">
+            Production Physiotherapy AI Performance Assistant
+          </h1>
+          <p className="text-muted-foreground">
+            Welcome to Production Physiotherapy's Personal Performance Coach. We are continually consolidating everything we know to improve and refine our services to you, and that has led us to developing this tool for you. What this tool gives you is access to that ever growing knowledge base whenever you need it.
+          </p>
+          <p className="text-muted-foreground mt-2">
+            Your Production has seen the value and also believe that this could be a game changing tool for how our Performing Athletes are cared for.
+          </p>
+          <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground mt-4">
               <div className={`w-3 h-3 rounded-full ${['intro', 'form', 'consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
               <div className={`w-3 h-3 rounded-full ${['form', 'consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
               <div className={`w-3 h-3 rounded-full ${['consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />

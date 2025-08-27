@@ -112,10 +112,11 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <User className="w-6 h-6" />
-          Complete Your Profile
+          Production Physiotherapy AI Performance Assistant
         </CardTitle>
         <CardDescription>
-          Help us customize your AI physio experience for {productionName}
+          Tell us about yourself<br/>
+          This is where we personalise your AI Performance Assistant. All this information is secured and not shared with production. It's only use is to help personalise the information I give you and help me filter my knowledge base to your specific needs.
         </CardDescription>
       </CardHeader>
       
@@ -583,12 +584,12 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
-                        <FormLabel className="text-sm font-normal">
-                          I consent to receive WhatsApp messages from the AI Physio Twin *
-                        </FormLabel>
-                        <FormDescription className="text-xs">
-                          Required to access the WhatsApp-based AI physio service
-                        </FormDescription>
+                         <FormLabel className="text-sm font-normal">
+                           I consent to receive WhatsApp messages from my AI Performance Assistant *
+                         </FormLabel>
+                         <FormDescription className="text-xs">
+                           We deliver information from your AI Performance Assistant to you via WhatsApp messenger. You can opt out at any time by sending STOP.
+                         </FormDescription>
                       </div>
                     </FormItem>
                   )}
@@ -606,9 +607,9 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
-                        <FormLabel className="text-sm font-normal">
-                          I consent to the processing of my health and personal data for AI physiotherapy guidance *
-                        </FormLabel>
+                         <FormLabel className="text-sm font-normal">
+                           I consent to the processing of my health and personal data for AI Performance Assistant guidance *
+                         </FormLabel>
                         <FormDescription className="text-xs">
                           Data will be processed securely and used only to provide personalized guidance
                         </FormDescription>

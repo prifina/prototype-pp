@@ -37,9 +37,10 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
           <Check className="w-8 h-8 text-green-600" />
         </div>
-        <CardTitle className="text-2xl text-green-700">You're All Set!</CardTitle>
+        <CardTitle className="text-2xl text-green-700">Production Physiotherapy's AI Performance Assistant</CardTitle>
         <CardDescription>
-          Welcome to {productionName}'s AI Physio Twin system
+          You're all set<br/>
+          Welcome to your AI Performance Assistant
         </CardDescription>
       </CardHeader>
       
@@ -47,8 +48,8 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         <Alert>
           <MessageCircle className="h-4 w-4" />
           <AlertDescription>
-            <strong>Next Step:</strong> Start chatting with your AI physio twin on WhatsApp. 
-            Use one of the methods below to begin your first conversation.
+            <strong>Next step:</strong> Start chatting with your AI Performance Assistant on WhatsApp. 
+            Use one of the methods below to begin your conversation.
           </AlertDescription>
         </Alert>
 
@@ -123,16 +124,16 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         <div className="bg-muted/50 p-4 rounded-lg">
           <h3 className="font-semibold text-foreground mb-2">What to Expect</h3>
           <ul className="text-sm text-muted-foreground space-y-1">
-            <li>• Your AI physio twin will greet you and offer quick-start options</li>
-            <li>• Choose from Sleep, Nutrition, Warm-ups, or Recovery guidance</li>
-            <li>• Get personalized advice based on your profile</li>
-            <li>• Ask follow-up questions anytime during your show run</li>
+            <li>• A greeting from your AI Performance Assistant</li>
+            <li>• You can lead the conversation with your first question or stating your initial goal</li>
+            <li>• Get your personalised advice based on your question, our knowledge base and your specific profile</li>
+            <li>• Ask follow-up questions in your own time, anytime whilst you're with the production</li>
           </ul>
         </div>
 
         {/* Support Information */}
         <div className="text-center text-sm text-muted-foreground">
-          <p>Need help? Contact your production's medical team or stage management.</p>
+          <p>Need help? Contact Production Physiotherapy or production</p>
           <p className="mt-1">
             <strong>Seat ID:</strong> <code className="bg-muted px-1 rounded">{result.seat_id}</code>
           </p>
