@@ -1,6 +1,9 @@
 // Onboarding API service for Production Physio system
 import { supabase } from '@/integrations/supabase/client';
 import { OnboardingFormData, OnboardingResponse } from '@/types/database';
+import { showApi } from './showApi';
+import { seatApi } from './seatApi';
+import { normalizePhoneNumber } from '@/utils/phoneNormalization';
 
 // Generate QR code for WhatsApp link
 function generateQRCodeURL(waLink: string): string {
@@ -25,59 +28,58 @@ function generateWhatsAppLink(seatCode: string, phoneNumber?: string): string {
 }
 
 export const onboardingApi = {
-  // Verify production passcode
+  /**
+   * Verify show passcode - Updated to use new Show model
+   */
   async verifyPasscode(passcode: string): Promise<{ id: string; name: string }> {
     try {
-      // For demo purposes, accept DEMO123 passcode
-      if (passcode === 'DEMO123') {
-        return { id: 'demo-production-id', name: 'Demo Production' };
-      }
-      
-      // In production, this would hash and verify against database
-      // const hashedPasscode = await crypto.subtle.digest(
-      //   'SHA-256', 
-      //   new TextEncoder().encode(passcode)
-      // ).then(buffer => 
-      //   Array.from(new Uint8Array(buffer))
-      //     .map(b => b.toString(16).padStart(2, '0'))
-      //     .join('')
-      // );
-
-      throw new Error('Invalid passcode');
+      const show = await showApi.verifyPasscode(passcode);
+      return { id: show.id, name: show.show_name };
     } catch (error) {
       console.error('Passcode verification error:', error);
       throw new Error('Invalid passcode');
     }
   },
 
-  // Submit onboarding form and create seat
+  /**
+   * Submit onboarding form with phone validation against pre-loaded seats
+   */
   async submitOnboarding(
-    productionId: string, 
+    showId: string, 
     formData: OnboardingFormData
   ): Promise<OnboardingResponse> {
     try {
-      // For demo purposes, generate mock data
-      const seatId = `seat-${Date.now()}`;
-      const seatCode = `SC-DEMO-${Math.random().toString(36).substring(2, 10).toUpperCase()}-X`;
-      
-      const waLink = generateWhatsAppLink(seatCode);
+      // Step 1: Validate phone number format
+      const phoneResult = normalizePhoneNumber(formData.phone_number);
+      if (!phoneResult.isValid) {
+        throw new Error('Invalid phone number format. Please enter a valid UK mobile number.');
+      }
+
+      // Step 2: Find matching seat for this phone in this show
+      const matchingSeat = await seatApi.findSeatByPhone(showId, formData.phone_number);
+      if (!matchingSeat) {
+        throw new Error(`This number isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
+      }
+
+      // Step 3: Generate WhatsApp link and QR code
+      const waLink = generateWhatsAppLink(matchingSeat.seat_code);
       const qrUrl = generateQRCodeURL(waLink);
 
-      // In production, this would:
-      // 1. Create seat in database
-      // 2. Create profile with form data
-      // 3. Record opt-in events
-      // 4. Generate proper seat codes with validation
+      // Step 4: In full implementation, we would:
+      // - Create/update profile with form data
+      // - Record consent timestamps
+      // - Log opt-in events
+      // - Send confirmation email/SMS
 
-      console.log('Mock onboarding data:', {
-        productionId,
-        formData,
-        seatCode,
-        waLink
+      console.log('Onboarding completed:', {
+        showId,
+        seatId: matchingSeat.id,
+        phoneE164: phoneResult.e164,
+        formData
       });
 
       return {
-        seat_id: seatId,
+        seat_id: matchingSeat.id,
         wa_link: waLink,
         qr_url: qrUrl
       };
@@ -88,10 +90,12 @@ export const onboardingApi = {
     }
   },
 
-  // Get seat QR code
+  /**
+   * Get seat QR code
+   */
   async getSeatQR(seatId: string): Promise<string> {
     try {
-      // Mock QR code URL
+      // In full implementation, we would fetch actual seat code from database
       const mockQRUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&ecc=M&data=${encodeURIComponent('seat:SC-DEMO-12345678-X')}`;
       return mockQRUrl;
     } catch (error) {
@@ -100,10 +104,12 @@ export const onboardingApi = {
     }
   },
 
-  // Get seat WhatsApp link
+  /**
+   * Get seat WhatsApp link
+   */
   async getSeatLink(seatId: string): Promise<{ wa_link: string }> {
     try {
-      // Mock WhatsApp link
+      // In full implementation, we would fetch actual seat code from database
       const waLink = generateWhatsAppLink('SC-DEMO-12345678-X');
       return { wa_link: waLink };
     } catch (error) {

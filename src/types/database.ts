@@ -1,8 +1,16 @@
 // Database types for Production Physio AI Twin system
 
-export interface Production {
+export interface Show {
   id: string;
-  name: string;
+  show_name: string;
+  production_house_name: string;
+  contacts?: {
+    gm?: string;
+    production_coordinator?: string;
+    company_manager?: string;
+  };
+  default_seat_duration_days: number;
+  status: 'active' | 'archived';
   passcode_hash: string;
   seat_limit: number;
   start_at: string;
@@ -11,18 +19,26 @@ export interface Production {
   updated_at: string;
 }
 
+// Legacy alias for backward compatibility
+export type Production = Show;
+
 export type SeatStatus = 'pending' | 'active' | 'expired' | 'revoked';
 
 export interface Seat {
   id: string;
-  production_id: string;
+  show_id: string; // Updated from production_id to match new Show model
   phone_e164?: string;
+  phone_original_input?: string; // Store original input for audit/support
   phone_hash?: string;
   status: SeatStatus;
   start_at?: string;
   end_at?: string;
+  expires_at?: string; // When this seat expires
   seat_code: string;
   qr_url?: string;
+  license_batch_id?: string; // Group seats from same CSV import
+  wa_id?: string; // WhatsApp ID after binding
+  binding_completed_at?: string; // When seat was bound to phone
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +52,7 @@ export interface Profile {
   role: string;
   show_name: string;
   tour_or_resident: TourOrResident;
+  phone_e164?: string; // Normalized phone number
   sleep_env?: {
     environment: 'hotel' | 'home' | 'other';
     noise_level: 'quiet' | 'moderate' | 'noisy';
@@ -112,6 +129,9 @@ export interface OnboardingFormData {
   role: string;
   show_name: string;
   tour_or_resident: TourOrResident;
+  
+  // Phone number (will be validated against pre-loaded seats)
+  phone_number: string;
   
   // Health context
   sleep_environment: 'hotel' | 'home' | 'other';
