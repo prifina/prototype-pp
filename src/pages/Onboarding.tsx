@@ -7,6 +7,7 @@ import { OnboardingForm } from '@/components/onboarding/OnboardingForm';
 import { ConsentPage } from '@/components/onboarding/ConsentPage';
 import { ConfirmationPage } from '@/components/onboarding/ConfirmationPage';
 import { OnboardingFormData, OnboardingResponse } from '@/types/database';
+import logoImage from '@/assets/production-physiotherapy-logo.png';
 
 type OnboardingStep = 'passcode' | 'intro' | 'form' | 'consent' | 'confirmation';
 
@@ -95,13 +96,14 @@ export const Onboarding = () => {
         <div className="mb-8 text-center">
           <div className="flex justify-center mb-4">
             <img 
-              src="/lovable-uploads/28eb4092-896e-4ebd-a3a1-60f36f77edb4.png" 
+              src={logoImage} 
               alt="Production Physiotherapy Logo" 
               className="h-16 w-16"
             />
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Production Physiotherapy AI Performance Assistant
+            AI Performance Assistant<br/>
+            <span className="text-xl text-muted-foreground">by Production Physiotherapy</span>
           </h1>
           <p className="text-muted-foreground">
             Welcome to Production Physiotherapy's Personal Performance Coach. We are continually consolidating everything we know to improve and refine our services to you, and that has led us to developing this tool for you. What this tool gives you is access to that ever growing knowledge base whenever you need it.

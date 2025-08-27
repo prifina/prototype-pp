@@ -112,7 +112,7 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <User className="w-6 h-6" />
-          Production Physiotherapy AI Performance Assistant
+          AI Performance Assistant by Production Physiotherapy
         </CardTitle>
         <CardDescription>
           Tell us about yourself<br/>

@@ -16,7 +16,7 @@ export const IntroExpectations: React.FC<IntroExpectationsProps> = ({
   return (
     <Card className="w-full">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Production Physiotherapy AI Performance Assistant</CardTitle>
+        <CardTitle className="text-2xl">AI Performance Assistant<br/><span className="text-lg text-muted-foreground">by Production Physiotherapy</span></CardTitle>
         <CardDescription>
           Welcome to your AI Performance Assistant from Production Physiotherapy brought to you by {productionName}
         </CardDescription>

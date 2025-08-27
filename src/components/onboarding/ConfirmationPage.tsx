@@ -37,7 +37,7 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
           <Check className="w-8 h-8 text-green-600" />
         </div>
-        <CardTitle className="text-2xl text-green-700">Production Physiotherapy's AI Performance Assistant</CardTitle>
+        <CardTitle className="text-2xl text-green-700">AI Performance Assistant<br/><span className="text-lg text-muted-foreground">by Production Physiotherapy</span></CardTitle>
         <CardDescription>
           You're all set<br/>
           Welcome to your AI Performance Assistant
