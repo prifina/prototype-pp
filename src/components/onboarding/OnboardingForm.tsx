@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Badge } from '@/components/ui/badge';
-import { X, Plus } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Phone, User, Utensils, Bed, Target } from 'lucide-react';
 import { OnboardingFormData } from '@/types/database';
 
 interface OnboardingFormProps {
@@ -15,300 +20,612 @@ interface OnboardingFormProps {
   onSubmit: (data: OnboardingFormData) => void;
 }
 
-export const OnboardingForm: React.FC<OnboardingFormProps> = ({ 
-  productionName, 
-  onSubmit 
-}) => {
-  const [formData, setFormData] = useState<Partial<OnboardingFormData>>({
-    allergies: [],
-    intolerances: [],
-    dietary_preferences: []
-  });
+const formSchema = z.object({
+  // Personal Info
+  name: z.string().min(1, 'Name is required'),
+  role: z.string().min(1, 'Role is required'),
+  show_name: z.string().min(1, 'Show name is required'),
+  tour_or_resident: z.enum(['tour', 'resident']),
   
-  const [newAllergy, setNewAllergy] = useState('');
-  const [newIntolerance, setNewIntolerance] = useState('');
-  const [newDietaryPref, setNewDietaryPref] = useState('');
+  // Phone Number - NEW FIELD
+  phone_number: z.string().min(1, 'Phone number is required'),
+  
+  // Health Context
+  sleep_environment: z.enum(['hotel', 'home', 'other']),
+  noise_level: z.enum(['quiet', 'moderate', 'noisy']),
+  light_control: z.enum(['good', 'limited', 'poor']),
+  sleep_notes: z.string().optional(),
+  
+  // Food Constraints
+  allergies: z.array(z.string()).default([]),
+  intolerances: z.array(z.string()).default([]),
+  dietary_preferences: z.array(z.string()).default([]),
+  food_notes: z.string().optional(),
+  
+  // Health & Goals
+  injuries_notes: z.string().optional(),
+  goals: z.string().optional(),
+  
+  // Consent
+  privacy_policy: z.boolean().refine(val => val === true, 'You must accept the privacy policy'),
+  terms_of_service: z.boolean().refine(val => val === true, 'You must accept the terms of service'),
+  whatsapp_opt_in: z.boolean().refine(val => val === true, 'WhatsApp consent is required for this service'),
+  data_processing: z.boolean().refine(val => val === true, 'Data processing consent is required'),
+});
 
-  const handleInputChange = (field: keyof OnboardingFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+type FormData = z.infer<typeof formSchema>;
 
-  const addToArray = (field: 'allergies' | 'intolerances' | 'dietary_preferences', value: string, setValue: (v: string) => void) => {
-    if (value.trim()) {
-      const currentArray = formData[field] || [];
-      handleInputChange(field, [...currentArray, value.trim()]);
-      setValue('');
+export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, onSubmit }) => {
+  const [customAllergy, setCustomAllergy] = React.useState('');
+  const [customIntolerance, setCustomIntolerance] = React.useState('');
+  const [customDietPref, setCustomDietPref] = React.useState('');
+
+  const form = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: '',
+      role: '',
+      show_name: productionName,
+      tour_or_resident: 'tour',
+      phone_number: '',
+      sleep_environment: 'hotel',
+      noise_level: 'moderate',
+      light_control: 'good',
+      sleep_notes: '',
+      allergies: [],
+      intolerances: [],
+      dietary_preferences: [],
+      food_notes: '',
+      injuries_notes: '',
+      goals: '',
+      privacy_policy: false,
+      terms_of_service: false,
+      whatsapp_opt_in: false,
+      data_processing: false,
+    },
+  });
+
+  const commonAllergies = ['Nuts', 'Shellfish', 'Dairy', 'Eggs', 'Soy', 'Gluten'];
+  const commonIntolerances = ['Lactose', 'Gluten', 'Fructose', 'Histamine'];
+  const commonDietPrefs = ['Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Low-carb', 'Keto'];
+
+  const addToArray = (fieldName: 'allergies' | 'intolerances' | 'dietary_preferences', value: string) => {
+    if (!value.trim()) return;
+    
+    const currentValues = form.getValues(fieldName);
+    if (!currentValues.includes(value)) {
+      form.setValue(fieldName, [...currentValues, value]);
     }
   };
 
-  const removeFromArray = (field: 'allergies' | 'intolerances' | 'dietary_preferences', index: number) => {
-    const currentArray = formData[field] || [];
-    handleInputChange(field, currentArray.filter((_, i) => i !== index));
+  const removeFromArray = (fieldName: 'allergies' | 'intolerances' | 'dietary_preferences', value: string) => {
+    const currentValues = form.getValues(fieldName);
+    form.setValue(fieldName, currentValues.filter(item => item !== value));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Basic validation
-    const requiredFields = ['name', 'role', 'show_name', 'tour_or_resident'];
-    const missingFields = requiredFields.filter(field => !formData[field as keyof OnboardingFormData]);
-    
-    if (missingFields.length > 0) {
-      alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
-      return;
-    }
-
-    onSubmit(formData as OnboardingFormData);
+  const handleSubmit = (data: FormData) => {
+    onSubmit(data as OnboardingFormData);
   };
 
   return (
-    <Card className="w-full">
+    <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
-        <CardTitle>Tell Us About Yourself</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <User className="w-6 h-6" />
+          Complete Your Profile
+        </CardTitle>
         <CardDescription>
-          Help us personalize your AI physio experience for {productionName}
+          Help us customize your AI physio experience for {productionName}
         </CardDescription>
       </CardHeader>
       
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Personal Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">About You</h3>
+      <CardContent className="space-y-8">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name || ''}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  placeholder="Your full name"
-                  required
+            {/* Personal Information Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <User className="w-5 h-5" />
+                Personal Information
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Full Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter your full name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role in Production *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Lead Actor, Chorus, Crew" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="tour_or_resident"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Production Type *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="tour">Touring Production</SelectItem>
+                          <SelectItem value="resident">Resident Production</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                {/* NEW PHONE FIELD */}
+                <FormField
+                  control={form.control}
+                  name="phone_number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Phone className="w-4 h-4" />
+                        Mobile Number *
+                      </FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="e.g., 07700 900123 or +44 7700 900123" 
+                          {...field} 
+                        />
+                      </FormControl>
+                      <FormDescription className="text-sm">
+                        Enter your UK mobile number. This must match your pre-registered number.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Sleep Environment Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <Bed className="w-5 h-5" />
+                Sleep Environment
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <FormField
+                  control={form.control}
+                  name="sleep_environment"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Where are you staying? *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="hotel">Hotel/Accommodation</SelectItem>
+                          <SelectItem value="home">At Home</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="noise_level"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Noise Level *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="quiet">Quiet</SelectItem>
+                          <SelectItem value="moderate">Moderate</SelectItem>
+                          <SelectItem value="noisy">Noisy</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="light_control"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Light Control *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="good">Good Control</SelectItem>
+                          <SelectItem value="limited">Limited Control</SelectItem>
+                          <SelectItem value="poor">Poor Control</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="role">Role *</Label>
-                <Input
-                  id="role"
-                  value={formData.role || ''}
-                  onChange={(e) => handleInputChange('role', e.target.value)}
-                  placeholder="e.g., Lead Actor, Dancer, Musician"
-                  required
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="sleep_notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Sleep Notes</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Any specific sleep challenges or requirements?"
+                        className="min-h-[80px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="show_name">Show Name *</Label>
-                <Input
-                  id="show_name"
-                  value={formData.show_name || ''}
-                  onChange={(e) => handleInputChange('show_name', e.target.value)}
-                  placeholder="Name of your show/production"
-                  required
-                />
+            <Separator />
+
+            {/* Food Constraints Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <Utensils className="w-5 h-5" />
+                Dietary Information
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="tour_or_resident">Performance Type *</Label>
-                <Select onValueChange={(value) => handleInputChange('tour_or_resident', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tour">Touring Production</SelectItem>
-                    <SelectItem value="resident">Resident Production</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Sleep Environment */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Sleep Environment</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Primary Sleep Location</Label>
-                <Select onValueChange={(value) => handleInputChange('sleep_environment', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hotel">Hotel</SelectItem>
-                    <SelectItem value="home">Home</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Allergies */}
+              <div>
+                <Label className="text-base font-medium">Food Allergies</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {commonAllergies.map(allergy => (
+                    <Badge
+                      key={allergy}
+                      variant={form.watch('allergies')?.includes(allergy) ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        if (form.watch('allergies')?.includes(allergy)) {
+                          removeFromArray('allergies', allergy);
+                        } else {
+                          addToArray('allergies', allergy);
+                        }
+                      }}
+                    >
+                      {allergy}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    placeholder="Add custom allergy"
+                    value={customAllergy}
+                    onChange={(e) => setCustomAllergy(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addToArray('allergies', customAllergy);
+                        setCustomAllergy('');
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      addToArray('allergies', customAllergy);
+                      setCustomAllergy('');
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
               
-              <div className="space-y-2">
-                <Label>Noise Level</Label>
-                <Select onValueChange={(value) => handleInputChange('noise_level', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quiet">Quiet</SelectItem>
-                    <SelectItem value="moderate">Moderate</SelectItem>
-                    <SelectItem value="noisy">Noisy</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Intolerances */}
+              <div>
+                <Label className="text-base font-medium">Food Intolerances</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {commonIntolerances.map(intolerance => (
+                    <Badge
+                      key={intolerance}
+                      variant={form.watch('intolerances')?.includes(intolerance) ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        if (form.watch('intolerances')?.includes(intolerance)) {
+                          removeFromArray('intolerances', intolerance);
+                        } else {
+                          addToArray('intolerances', intolerance);
+                        }
+                      }}
+                    >
+                      {intolerance}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    placeholder="Add custom intolerance"
+                    value={customIntolerance}
+                    onChange={(e) => setCustomIntolerance(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addToArray('intolerances', customIntolerance);
+                        setCustomIntolerance('');
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      addToArray('intolerances', customIntolerance);
+                      setCustomIntolerance('');
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
               
-              <div className="space-y-2">
-                <Label>Light Control</Label>
-                <Select onValueChange={(value) => handleInputChange('light_control', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select control" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="good">Good Control</SelectItem>
-                    <SelectItem value="limited">Limited Control</SelectItem>
-                    <SelectItem value="poor">Poor Control</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Dietary Preferences */}
+              <div>
+                <Label className="text-base font-medium">Dietary Preferences</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {commonDietPrefs.map(pref => (
+                    <Badge
+                      key={pref}
+                      variant={form.watch('dietary_preferences')?.includes(pref) ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        if (form.watch('dietary_preferences')?.includes(pref)) {
+                          removeFromArray('dietary_preferences', pref);
+                        } else {
+                          addToArray('dietary_preferences', pref);
+                        }
+                      }}
+                    >
+                      {pref}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    placeholder="Add custom preference"
+                    value={customDietPref}
+                    onChange={(e) => setCustomDietPref(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addToArray('dietary_preferences', customDietPref);
+                        setCustomDietPref('');
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      addToArray('dietary_preferences', customDietPref);
+                      setCustomDietPref('');
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="sleep_notes">Sleep Notes (Optional)</Label>
-              <Textarea
-                id="sleep_notes"
-                value={formData.sleep_notes || ''}
-                onChange={(e) => handleInputChange('sleep_notes', e.target.value)}
-                placeholder="Any specific sleep challenges or preferences..."
-                rows={2}
+              
+              <FormField
+                control={form.control}
+                name="food_notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Food Notes</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Any other dietary requirements or notes?"
+                        className="min-h-[80px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-          </div>
 
-          {/* Food Constraints */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Food & Nutrition</h3>
-            
-            {/* Allergies */}
-            <div className="space-y-2">
-              <Label>Food Allergies</Label>
-              <div className="flex space-x-2">
-                <Input
-                  value={newAllergy}
-                  onChange={(e) => setNewAllergy(e.target.value)}
-                  placeholder="Add an allergy"
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addToArray('allergies', newAllergy, setNewAllergy))}
+            <Separator />
+
+            {/* Health & Goals Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <Target className="w-5 h-5" />
+                Health & Goals
+              </div>
+              
+              <FormField
+                control={form.control}
+                name="injuries_notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Current Injuries or Physical Concerns</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Describe any current injuries, pain, or physical limitations..."
+                        className="min-h-[100px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      This information helps provide appropriate guidance. For urgent issues, always seek immediate medical attention.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="goals"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Performance Goals</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="What are your physical performance goals for this production?"
+                        className="min-h-[100px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <Separator />
+
+            {/* Consent Section */}
+            <div className="space-y-6">
+              <div className="text-lg font-semibold">Consent & Terms</div>
+              
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="privacy_policy"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal">
+                          I have read and accept the <a href="#" className="text-primary underline">Privacy Policy</a> *
+                        </FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
                 />
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addToArray('allergies', newAllergy, setNewAllergy)}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(formData.allergies || []).map((allergy, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                    {allergy}
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
-                      onClick={() => removeFromArray('allergies', index)}
-                    />
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Similar sections for intolerances and dietary preferences */}
-            <div className="space-y-2">
-              <Label>Food Intolerances</Label>
-              <div className="flex space-x-2">
-                <Input
-                  value={newIntolerance}
-                  onChange={(e) => setNewIntolerance(e.target.value)}
-                  placeholder="Add an intolerance"
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addToArray('intolerances', newIntolerance, setNewIntolerance))}
+                
+                <FormField
+                  control={form.control}
+                  name="terms_of_service"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal">
+                          I accept the <a href="#" className="text-primary underline">Terms of Service</a> *
+                        </FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
                 />
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => addToArray('intolerances', newIntolerance, setNewIntolerance)}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(formData.intolerances || []).map((intolerance, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                    {intolerance}
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
-                      onClick={() => removeFromArray('intolerances', index)}
-                    />
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Health & Goals */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Health & Goals</h3>
-            
-            <div className="space-y-2">
-              <Label htmlFor="injuries_notes">Past Injuries (Optional)</Label>
-              <Textarea
-                id="injuries_notes"
-                value={formData.injuries_notes || ''}
-                onChange={(e) => handleInputChange('injuries_notes', e.target.value)}
-                placeholder="Brief notes about any past injuries relevant to your performance..."
-                rows={2}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="goals">Your Goals</Label>
-              <Textarea
-                id="goals"
-                value={formData.goals || ''}
-                onChange={(e) => handleInputChange('goals', e.target.value)}
-                placeholder="What would you like to achieve with your AI physio twin? (e.g., better sleep, injury prevention, performance optimization)"
-                rows={3}
-              />
-            </div>
-          </div>
-
-          {/* WhatsApp Opt-in */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Communication Preferences</h3>
-            
-            <div className="flex items-start space-x-2">
-              <Checkbox 
-                id="whatsapp_opt_in"
-                checked={formData.whatsapp_opt_in || false}
-                onCheckedChange={(checked) => handleInputChange('whatsapp_opt_in', checked)}
-              />
-              <div className="space-y-1">
-                <Label htmlFor="whatsapp_opt_in" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  I consent to receive WhatsApp messages from the AI physio twin
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  You'll receive personalized guidance and can chat with your AI physio assistant via WhatsApp. 
-                  You can opt out at any time by sending "STOP".
-                </p>
+                
+                <FormField
+                  control={form.control}
+                  name="whatsapp_opt_in"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal">
+                          I consent to receive WhatsApp messages from the AI Physio Twin *
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                          Required to access the WhatsApp-based AI physio service
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="data_processing"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal">
+                          I consent to the processing of my health and personal data for AI physiotherapy guidance *
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                          Data will be processed securely and used only to provide personalized guidance
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
               </div>
             </div>
-          </div>
 
-          <Button type="submit" className="w-full" size="lg">
-            Continue to Consent
-          </Button>
-        </form>
+            <div className="flex justify-end pt-6">
+              <Button type="submit" size="lg" className="min-w-[200px]">
+                Complete Profile Setup
+              </Button>
+            </div>
+          </form>
+        </Form>
       </CardContent>
     </Card>
   );
