@@ -98,6 +98,18 @@ serve(async (req) => {
       return new Response('Rate limit exceeded', { status: 429, headers: corsHeaders });
     }
 
+    // Handle Twilio sandbox activation message
+    if (messageBody.toLowerCase().includes('join closer-send')) {
+      // Send acknowledgment for sandbox activation
+      await sendWhatsAppMessage(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { message: 'Sandbox activated! Now send your seat code in the format: seat:YOUR_CODE' }
+      );
+      return new Response('Sandbox activation acknowledged', { status: 200, headers: corsHeaders });
+    }
+
     // Extract seat binding code
     const seatCode = extractSeatCode(messageBody);
     

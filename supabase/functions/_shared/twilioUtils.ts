@@ -150,6 +150,13 @@ export function markProcessed(messageSid: string): void {
 export function extractSeatCode(message: string): string | null {
   if (!message) return null;
   
+  const normalizedMessage = message.trim().toUpperCase();
+  
+  // Skip sandbox activation message
+  if (normalizedMessage.includes('JOIN CLOSER-SEND')) {
+    return null;
+  }
+  
   // Primary pattern: seat:CODE or SEAT:CODE
   const seatCodePattern = /seat:([A-Z0-9-]+)/i;
   const match = message.match(seatCodePattern);

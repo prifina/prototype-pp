@@ -226,7 +226,7 @@ function generateQRPackHTML(seats: Seat[], layout: LayoutOption, showName: strin
   }
 
   const generateQRUrl = (seatCode: string) => {
-    const message = `seat:${seatCode}`;
+    const message = `join closer-send`;
     const encodedMessage = encodeURIComponent(message);
     // Direct link to Twilio WhatsApp sandbox number
     const twilioSandboxNumber = '14155238886';

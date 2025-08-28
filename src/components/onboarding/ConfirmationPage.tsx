@@ -123,14 +123,15 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         {/* What to Expect */}
          <div className="bg-muted/50 p-4 rounded-lg">
            <h3 className="font-semibold text-foreground mb-2">What to Expect</h3>
-           <ul className="text-sm text-muted-foreground space-y-1">
-             <li>• Your seat code will be sent automatically to identify you</li>
-             <li>• You'll be connected to our WhatsApp AI assistant via Twilio sandbox</li>
-             <li>• A greeting from your AI Performance Assistant will follow</li>
-             <li>• You can start the conversation with your first question or goal</li>
-             <li>• Get personalized advice based on your profile and our knowledge base</li>
-             <li>• Ask follow-up questions anytime while you're with the production</li>
-           </ul>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• "join closer-send" will be sent automatically to activate the sandbox</li>
+              <li>• Then send your seat code: <code className="bg-muted px-1 rounded">{result.seat_id}</code></li>
+              <li>• You'll be connected to our WhatsApp AI assistant via Twilio sandbox</li>
+              <li>• A greeting from your AI Performance Assistant will follow</li>
+              <li>• You can start the conversation with your first question or goal</li>
+              <li>• Get personalized advice based on your profile and our knowledge base</li>
+              <li>• Ask follow-up questions anytime while you're with the production</li>
+            </ul>
          </div>
 
         {/* Support Information */}

@@ -113,7 +113,7 @@ serve(async (req) => {
         body: JSON.stringify({
           to: user_context.phone_e164,
           template: 'red_flag_escalation_v1',
-          variables: ['your physio/medical lead', '+44 123 456 7890'] // TODO: Get from production settings
+          variables: ['support@productionphysio.com', 'support@productionphysio.com']
         })
       });
       
