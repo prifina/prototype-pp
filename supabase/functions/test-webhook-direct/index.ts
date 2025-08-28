@@ -15,7 +15,8 @@ serve(async (req) => {
     
     // Test 1: Check if webhook URL is accessible
     console.log("Testing webhook URL accessibility...");
-    const baseUrl = req.url.split('/functions')[0];
+    // Use proper Supabase function URLs
+    const baseUrl = 'https://fkvtnyvttgjiherassmn.supabase.co';
     const webhookUrl = `${baseUrl}/functions/v1/twilio-webhook`;
     console.log("Webhook URL:", webhookUrl);
     

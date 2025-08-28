@@ -135,6 +135,11 @@ serve(async (req) => {
     const CORE_API_URL = Deno.env.get('CORE_API_URL');
     const CORE_API_KEY = Deno.env.get('CORE_API_KEY');
     
+    // Debug environment variables
+    console.log('CORE_API_URL available:', !!CORE_API_URL);
+    console.log('CORE_API_KEY available:', !!CORE_API_KEY);
+    console.log('MIDDLEWARE_API_URL available:', !!Deno.env.get('MIDDLEWARE_API_URL'));
+    
     if (!CORE_API_URL || !CORE_API_KEY) {
       console.error('Missing core API configuration');
       // Fallback response
@@ -152,7 +157,8 @@ serve(async (req) => {
     }
 
     // Try middleware API which handles the AI chat properly
-    const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/middleware-api`, {
+    console.log('Calling middleware API...');
+    const middlewareResponse = await fetch(`https://fkvtnyvttgjiherassmn.supabase.co/functions/v1/middleware-api`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
