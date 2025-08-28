@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Users, BarChart3, Settings as SettingsIcon, Package, Upload, FileText } from 'lucide-react';
+import { ArrowLeft, Users, BarChart3, Settings as SettingsIcon, Package, Upload, FileText, Copy, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { SeatManagement } from './SeatManagement';
 import { ProfileManagement } from './ProfileManagement';
@@ -23,6 +23,7 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
   const [production, setProduction] = useState<Show | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('seats');
+  const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -61,6 +62,26 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
       return <Badge variant="outline">Ended</Badge>;
     } else {
       return <Badge variant="default">Active</Badge>;
+    }
+  };
+
+  const copyPasscode = async () => {
+    if (!production?.passcode_hash) return;
+    
+    try {
+      await navigator.clipboard.writeText(production.passcode_hash);
+      setCopied(true);
+      toast({
+        title: "Copied!",
+        description: "Registration passcode copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      toast({
+        title: "Failed to copy",
+        description: "Could not copy passcode to clipboard",
+        variant: "destructive"
+      });
     }
   };
 
@@ -105,6 +126,44 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
           </div>
         </div>
       </div>
+
+      {/* Registration Passcode */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Registration Access</CardTitle>
+          <CardDescription>
+            Participants use this passcode to register for the production
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+            <div className="flex flex-col">
+              <div className="text-sm text-muted-foreground mb-1">Registration Passcode</div>
+              <div className="text-2xl font-mono font-bold tracking-wider">
+                {production.passcode_hash}
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={copyPasscode}
+              className="flex items-center gap-2"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Production Overview */}
       <Card>
