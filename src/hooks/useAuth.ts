@@ -66,35 +66,6 @@ export const useAuth = () => {
     return () => subscription.unsubscribe();
   }, [checkUserRole]);
 
-  const signUp = async (email: string, password: string, metadata?: any) => {
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: metadata,
-        },
-      });
-
-      if (error) throw error;
-      
-      toast({
-        title: "Account Created",
-        description: "Please check your email for verification link.",
-      });
-      
-      return { data, error: null };
-    } catch (error: any) {
-      toast({
-        title: "Sign Up Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      return { data: null, error };
-    }
-  };
-
   const signIn = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -106,14 +77,14 @@ export const useAuth = () => {
 
       toast({
         title: "Welcome Back",
-        description: "Successfully signed in.",
+        description: "Successfully signed in to admin console.",
       });
       
       return { data, error: null };
     } catch (error: any) {
       toast({
-        title: "Sign In Failed",
-        description: error.message,
+        title: "Access Denied",
+        description: "Invalid credentials or insufficient permissions.",
         variant: "destructive",
       });
       return { data: null, error };
@@ -140,7 +111,6 @@ export const useAuth = () => {
 
   return {
     ...authState,
-    signUp,
     signIn,
     signOut,
   };

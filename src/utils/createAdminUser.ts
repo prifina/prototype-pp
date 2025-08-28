@@ -56,15 +56,58 @@ export const grantAdminAccess = async (userEmail: string): Promise<void> => {
 };
 
 /**
- * Instructions for creating the first admin user:
+ * ADMIN ACCOUNT SETUP INSTRUCTIONS
  * 
- * 1. Sign up a user through the /auth page
- * 2. In the Supabase SQL editor, run this query to grant admin access:
+ * To create admin accounts for this system, follow these steps:
+ * 
+ * 1. Go to Supabase Dashboard > Authentication > Users
+ * 2. Click "Invite a user" or "Add user"
+ * 3. Enter the admin's email and a temporary password
+ * 4. After creating the user, note their User ID
+ * 5. Go to SQL Editor and run this query to grant admin access:
  * 
  * INSERT INTO public.user_roles (user_id, role)
- * SELECT id, 'admin'::app_role
- * FROM auth.users 
- * WHERE email = 'your-admin-email@example.com';
+ * VALUES ('[USER_ID_FROM_STEP_4]', 'admin'::app_role);
  * 
- * 3. The user will now have admin access to the system
+ * 6. The user can now sign in at /auth with admin privileges
+ * 
+ * ALTERNATIVE: Create user via SQL Editor:
+ * This creates both the auth user and grants admin role in one step:
+ * 
+ * -- First, insert the auth user (replace email/password)
+ * INSERT INTO auth.users (
+ *   instance_id,
+ *   id,
+ *   aud,
+ *   role,
+ *   email,
+ *   encrypted_password,
+ *   email_confirmed_at,
+ *   created_at,
+ *   updated_at,
+ *   confirmation_token,
+ *   email_change,
+ *   email_change_token,
+ *   recovery_token
+ * ) VALUES (
+ *   '00000000-0000-0000-0000-000000000000',
+ *   gen_random_uuid(),
+ *   'authenticated',
+ *   'authenticated',
+ *   'admin@example.com',
+ *   crypt('your-password', gen_salt('bf')),
+ *   NOW(),
+ *   NOW(),
+ *   NOW(),
+ *   '',
+ *   '',
+ *   '',
+ *   ''
+ * );
+ * 
+ * -- Then grant admin role
+ * INSERT INTO public.user_roles (user_id, role)
+ * SELECT id, 'admin'::app_role 
+ * FROM auth.users 
+ * WHERE email = 'admin@example.com';
  */
