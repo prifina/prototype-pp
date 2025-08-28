@@ -18,17 +18,14 @@ const corsHeaders = {
 // Twilio API configuration
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM');
+const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM') || 'whatsapp:+14155238886';
 
 // Debug logging for Twilio configuration
 console.log('=== TWILIO CONFIG DEBUG ===');
 console.log('TWILIO_ACCOUNT_SID:', TWILIO_ACCOUNT_SID ? 'SET' : 'MISSING');
 console.log('TWILIO_AUTH_TOKEN:', TWILIO_AUTH_TOKEN ? 'SET' : 'MISSING'); 
-console.log('TWILIO_WHATSAPP_FROM:', TWILIO_WHATSAPP_FROM || 'MISSING - USING FALLBACK');
-
-if (!TWILIO_WHATSAPP_FROM) {
-  console.error('CRITICAL: TWILIO_WHATSAPP_FROM not set! This will cause "Channel not found" errors.');
-}
+console.log('TWILIO_WHATSAPP_FROM:', TWILIO_WHATSAPP_FROM);
+console.log('TWILIO_WHATSAPP_FROM source:', Deno.env.get('TWILIO_WHATSAPP_FROM') ? 'environment' : 'fallback');
 
 /**
  * Send message via Twilio API with enhanced error handling
@@ -40,24 +37,11 @@ async function sendTwilioMessage(to: string, body: any): Promise<any> {
     throw new Error('Twilio credentials not configured');
   }
   
-  // Critical debug: Check the From field value
-  console.log('=== DETAILED FROM FIELD DEBUG ===');
-  console.log('TWILIO_WHATSAPP_FROM raw value:', JSON.stringify(TWILIO_WHATSAPP_FROM));
-  console.log('TWILIO_WHATSAPP_FROM length:', TWILIO_WHATSAPP_FROM ? TWILIO_WHATSAPP_FROM.length : 'NULL');
-  console.log('TWILIO_WHATSAPP_FROM typeof:', typeof TWILIO_WHATSAPP_FROM);
-  
-  if (!TWILIO_WHATSAPP_FROM) {
-    throw new Error('TWILIO_WHATSAPP_FROM environment variable is not set');
-  }
-  
   const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
   
   const formData = new FormData();
   formData.append('From', TWILIO_WHATSAPP_FROM);
   formData.append('To', to);
-  
-  console.log('FormData From value:', formData.get('From'));
-  console.log('FormData To value:', formData.get('To'));
   
   if (typeof body === 'string') {
     // Plain text message

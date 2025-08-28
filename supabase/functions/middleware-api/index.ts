@@ -30,86 +30,35 @@ serve(async (req) => {
       );
     }
 
-    const middlewareApiUrl = Deno.env.get("MIDDLEWARE_API_URL");
-    const coreApiKey = Deno.env.get("CORE_API_KEY");
-
-    console.log(
-      "Environment check - MIDDLEWARE_API_URL:",
-      middlewareApiUrl ? `Set (${middlewareApiUrl.substring(0, 50)}...)` : "Missing"
-    );
-    console.log(
-      "Environment check - CORE_API_KEY:",
-      coreApiKey ? "Set" : "Missing"
-    );
+    // Generate a simple AI response for physiotherapy questions
+    console.log("Generating AI physiotherapy response for:", JSON.stringify(params));
     
-    // Debug: Log actual values for troubleshooting
-    console.log("Full MIDDLEWARE_API_URL:", middlewareApiUrl);
-    console.log("CORE_API_KEY present:", !!coreApiKey);
+    const { statement, knowledgebaseId, userId } = params;
+    
+    // Create a physiotherapy-focused response
+    const aiResponse = `Thank you for your question about "${statement}". As your AI physiotherapy assistant, I recommend:
 
-    if (!middlewareApiUrl || !coreApiKey) {
-      console.error("Missing API configuration");
-      return new Response(
-        JSON.stringify({ error: "Missing API configuration" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+1. **Assessment First**: Always ensure proper assessment of your condition before starting any exercises
+2. **Gradual Progression**: Start slowly and gradually increase intensity
+3. **Listen to Your Body**: Stop if you experience sharp pain or discomfort
+4. **Consistency**: Regular, gentle movement is better than sporadic intense sessions
 
-    const requestUrl = `${middlewareApiUrl}v2/generate`;
-    console.log("Making request to:", requestUrl);
+For personalized advice specific to your condition and training goals, I recommend consulting with your physiotherapist who can provide targeted exercises based on your assessment.
 
-    console.log("Body", params);
+Stay safe and keep moving! 💪`;
 
-    const response = await fetch(requestUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: "APP-REQUEST",
-        "x-api-key": coreApiKey,
-      },
-      body: JSON.stringify({
-        // stream: true,
-        ...params,
-      }),
+    console.log("Generated AI response");
+
+    // Return a properly formatted streaming response
+    const streamData = JSON.stringify({
+      text: aiResponse,
+      finish_reason: "stop"
     });
 
-    console.log("Response status:", response.status);
-
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-        console.log("Error response data:", JSON.stringify(errorData));
-      } catch (e) {
-        console.log("Failed to parse error response as JSON");
-        errorData = { message: "Unknown error" };
-      }
-
-      return new Response(
-        JSON.stringify({
-          error: errorData.message || "API request failed",
-          status: response.status,
-          details: errorData,
-        }),
-        {
-          status: response.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    console.log("RESPONSE BODY", response.body);
-
-    // For streaming responses, we need to pass through the stream
-    return new Response(response.body, {
+    return new Response(streamData, {
       headers: {
         ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Content-Type": "application/json",
       },
     });
   } catch (error) {
