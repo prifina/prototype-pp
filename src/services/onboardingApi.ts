@@ -12,19 +12,15 @@ function generateQRCodeURL(waLink: string): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=256x256&ecc=M&data=${encodedLink}`;
 }
 
-// Generate WhatsApp link with prefilled message
-function generateWhatsAppLink(seatCode: string, phoneNumber?: string): string {
+// Generate WhatsApp link with prefilled message to Twilio sandbox
+function generateWhatsAppLink(seatCode: string): string {
   const message = `seat:${seatCode}`;
   const encodedMessage = encodeURIComponent(message);
   
-  if (phoneNumber) {
-    // Direct link to specific WhatsApp number
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
-  } else {
-    // Generic WhatsApp link (will open user's WhatsApp)
-    return `https://wa.me/?text=${encodedMessage}`;
-  }
+  // Direct link to Twilio WhatsApp sandbox number
+  // This is the same number used in the Twilio integration
+  const twilioSandboxNumber = '14155238886'; // Twilio sandbox number without + or spaces
+  return `https://wa.me/${twilioSandboxNumber}?text=${encodedMessage}`;
 }
 
 export const onboardingApi = {
@@ -61,7 +57,7 @@ export const onboardingApi = {
         throw new Error(`This number isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
       }
 
-      // Step 3: Generate WhatsApp link and QR code
+      // Step 3: Generate WhatsApp link and QR code pointing to Twilio sandbox
       const waLink = generateWhatsAppLink(matchingSeat.seat_code);
       const qrUrl = generateQRCodeURL(waLink);
 

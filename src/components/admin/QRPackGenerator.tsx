@@ -228,7 +228,9 @@ function generateQRPackHTML(seats: Seat[], layout: LayoutOption, showName: strin
   const generateQRUrl = (seatCode: string) => {
     const message = `seat:${seatCode}`;
     const encodedMessage = encodeURIComponent(message);
-    const waLink = `https://wa.me/?text=${encodedMessage}`;
+    // Direct link to Twilio WhatsApp sandbox number
+    const twilioSandboxNumber = '14155238886';
+    const waLink = `https://wa.me/${twilioSandboxNumber}?text=${encodedMessage}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&data=${encodeURIComponent(waLink)}`;
   };
 
@@ -314,10 +316,10 @@ function generateQRPackHTML(seats: Seat[], layout: LayoutOption, showName: strin
                     <img src="${generateQRUrl(seat.seat_code)}" alt="QR Code" class="qr-image">
                     <div class="seat-code">${seat.seat_code}</div>
                     <div class="phone-hint">Phone: ...${seat.phone_number?.slice(-4) || '????'}</div>
-                    <div class="instructions">
-                        Scan QR code or tap link to start WhatsApp chat with your AI Physio Twin.
-                        Keep this card for reference.
-                    </div>
+                     <div class="instructions">
+                         Scan QR code or tap link to start WhatsApp chat with your AI Physio Twin on the Twilio sandbox.
+                         Keep this card for reference.
+                     </div>
                 </div>
             `).join('')}
         </div>

@@ -45,13 +45,13 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
       </CardHeader>
       
       <CardContent className="space-y-6">
-        <Alert>
-          <MessageCircle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Next step:</strong> Start chatting with your AI Performance Assistant on WhatsApp. 
-            Use one of the methods below to begin your conversation.
-          </AlertDescription>
-        </Alert>
+         <Alert>
+           <MessageCircle className="h-4 w-4" />
+           <AlertDescription>
+             <strong>Next step:</strong> Start chatting with your AI Performance Assistant on WhatsApp. 
+             The QR code and link below will connect you to our Twilio WhatsApp sandbox where your AI assistant is waiting.
+           </AlertDescription>
+         </Alert>
 
         {/* QR Code Method */}
         <div className="text-center space-y-4">
@@ -72,9 +72,9 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
             />
           </div>
           
-          <p className="text-sm text-muted-foreground">
-            Open your phone's camera or WhatsApp and scan this QR code
-          </p>
+           <p className="text-sm text-muted-foreground">
+             Open your phone's camera or WhatsApp and scan this QR code to connect to our AI assistant
+           </p>
         </div>
 
         {/* Direct Link Method */}
@@ -103,9 +103,9 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
             </Button>
           </div>
           
-          <p className="text-xs text-muted-foreground">
-            Click "Open WhatsApp" or copy the link to share with others
-          </p>
+           <p className="text-xs text-muted-foreground">
+             Click "Open WhatsApp" to connect directly to our AI assistant, or copy the link to share
+           </p>
         </div>
 
         {/* Fallback Instructions */}
@@ -121,15 +121,17 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         </Alert>
 
         {/* What to Expect */}
-        <div className="bg-muted/50 p-4 rounded-lg">
-          <h3 className="font-semibold text-foreground mb-2">What to Expect</h3>
-          <ul className="text-sm text-muted-foreground space-y-1">
-            <li>• A greeting from your AI Performance Assistant</li>
-            <li>• You can lead the conversation with your first question or stating your initial goal</li>
-            <li>• Get your personalised advice based on your question, our knowledge base and your specific profile</li>
-            <li>• Ask follow-up questions in your own time, anytime whilst you're with the production</li>
-          </ul>
-        </div>
+         <div className="bg-muted/50 p-4 rounded-lg">
+           <h3 className="font-semibold text-foreground mb-2">What to Expect</h3>
+           <ul className="text-sm text-muted-foreground space-y-1">
+             <li>• You'll be connected to our WhatsApp AI assistant via Twilio sandbox</li>
+             <li>• Your seat code will be automatically sent to identify you</li>
+             <li>• A greeting from your AI Performance Assistant will follow</li>
+             <li>• You can start the conversation with your first question or goal</li>
+             <li>• Get personalized advice based on your profile and our knowledge base</li>
+             <li>• Ask follow-up questions anytime while you're with the production</li>
+           </ul>
+         </div>
 
         {/* Support Information */}
         <div className="text-center text-sm text-muted-foreground">
