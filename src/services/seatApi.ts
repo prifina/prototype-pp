@@ -14,27 +14,68 @@ export const seatApi = {
     batchId: string,
     defaultDurationDays: number = 180
   ): Promise<Seat[]> {
-    // Mock implementation until Supabase tables are ready
     const now = new Date();
     const expiresAt = new Date(now.getTime() + defaultDurationDays * 24 * 60 * 60 * 1000);
     
-    const seats = await Promise.all(
+    const seatsToInsert = await Promise.all(
       validRows.map(async (row) => ({
-        id: `seat-${Date.now()}-${Math.random().toString(36).substring(2)}`,
         show_id: showId,
         seat_code: generateSeatCode(),
-        phone_e164: row.phoneE164,
-        phone_original_input: row.phoneOriginal,
-        phone_hash: await hashPhoneNumber(row.phoneE164),
+        phone_number: row.phoneE164,
         status: 'pending' as SeatStatus,
-        expires_at: expiresAt.toISOString(),
-        license_batch_id: batchId,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
+        expires_at: expiresAt.toISOString()
       }))
     );
 
-    return seats;
+    const { data, error } = await supabase
+      .from('seats')
+      .insert(seatsToInsert)
+      .select();
+
+    if (error) {
+      console.error('Seat import error:', error);
+      throw new Error('Failed to import seats');
+    }
+
+    return (data || []) as Seat[];
+  },
+
+  /**
+   * Create a single seat manually
+   */
+  async createSeat(
+    showId: string,
+    phoneNumber: string,
+    defaultDurationDays: number = 180
+  ): Promise<Seat> {
+    const phoneResult = normalizePhoneNumber(phoneNumber);
+    if (!phoneResult.isValid) {
+      throw new Error('Invalid phone number format');
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + defaultDurationDays * 24 * 60 * 60 * 1000);
+
+    const seatData = {
+      show_id: showId,
+      seat_code: generateSeatCode(),
+      phone_number: phoneResult.e164,
+      status: 'pending' as SeatStatus,
+      expires_at: expiresAt.toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('seats')
+      .insert([seatData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Seat creation error:', error);
+      throw new Error('Failed to create seat');
+    }
+
+    return data as Seat;
   },
 
   /**
@@ -47,27 +88,20 @@ export const seatApi = {
         return null;
       }
 
-      // Mock implementation - for demo, return a valid seat for normalized phone
-      if (phoneResult.e164 && showId === 'demo-show-id') {
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
-        
-        return {
-          id: `seat-${Date.now()}`,
-          show_id: showId,
-          seat_code: generateSeatCode(),
-          phone_e164: phoneResult.e164,
-          phone_original_input: phoneResult.originalInput,
-          phone_hash: await hashPhoneNumber(phoneResult.e164),
-          status: 'pending',
-          expires_at: expiresAt.toISOString(),
-          license_batch_id: 'demo-batch',
-          created_at: now.toISOString(),
-          updated_at: now.toISOString()
-        };
+      const { data, error } = await supabase
+        .from('seats')
+        .select('*')
+        .eq('show_id', showId)
+        .eq('phone_number', phoneResult.e164)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (error) {
+        console.error('Seat lookup error:', error);
+        return null;
       }
 
-      return null;
+      return data as Seat | null;
     } catch (error) {
       console.error('Seat lookup error:', error);
       return null;
@@ -85,60 +119,51 @@ export const seatApi = {
       batchId?: string; 
     }
   ): Promise<Seat[]> {
-    // Mock implementation until Supabase tables are ready
-    const mockSeats: Seat[] = [
-      {
-        id: 'seat-1',
-        show_id: showId,
-        seat_code: 'SC-DEMO-ABC12345-X',
-        phone_e164: '+447700900123',
-        phone_original_input: '07700 900123',
-        phone_hash: 'hash123',
-        status: 'pending',
-        expires_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-        license_batch_id: 'batch-1',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-    ];
-
-    let filteredSeats = mockSeats;
+    let query = supabase
+      .from('seats')
+      .select('*')
+      .eq('show_id', showId)
+      .order('created_at', { ascending: false });
 
     if (filters?.status) {
-      filteredSeats = filteredSeats.filter(seat => seat.status === filters.status);
+      query = query.eq('status', filters.status);
     }
 
     if (filters?.search) {
-      const searchLower = filters.search.toLowerCase();
-      filteredSeats = filteredSeats.filter(seat => 
-        seat.seat_code.toLowerCase().includes(searchLower) ||
-        seat.phone_e164?.includes(searchLower) ||
-        seat.phone_original_input?.toLowerCase().includes(searchLower)
-      );
+      const searchTerm = `%${filters.search}%`;
+      query = query.or(`seat_code.ilike.${searchTerm},phone_number.ilike.${searchTerm}`);
     }
 
-    return filteredSeats;
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Failed to fetch seats:', error);
+      throw new Error('Failed to fetch seats');
+    }
+
+    return (data || []) as Seat[];
   },
 
   /**
    * Update seat status
    */
   async updateSeatStatus(seatId: string, status: SeatStatus): Promise<Seat> {
-    // Mock implementation until Supabase tables are ready
-    const now = new Date();
-    return {
-      id: seatId,
-      show_id: 'demo-show-id',
-      seat_code: 'SC-DEMO-ABC12345-X',
-      phone_e164: '+447700900123',
-      phone_original_input: '07700 900123',
-      phone_hash: 'hash123',
-      status,
-      expires_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-      license_batch_id: 'batch-1',
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
-    };
+    const { data, error } = await supabase
+      .from('seats')
+      .update({ 
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', seatId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to update seat status:', error);
+      throw new Error('Failed to update seat status');
+    }
+
+    return data as Seat;
   },
 
   /**
@@ -150,21 +175,37 @@ export const seatApi = {
       throw new Error('Invalid phone number format');
     }
 
-    // Mock implementation until Supabase tables are ready
-    const now = new Date();
-    return {
-      id: seatId,
-      show_id: 'demo-show-id',
-      seat_code: 'SC-DEMO-ABC12345-X',
-      phone_e164: phoneResult.e164!,
-      phone_original_input: phoneResult.originalInput,
-      phone_hash: await hashPhoneNumber(phoneResult.e164!),
-      status: 'pending',
-      expires_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-      license_batch_id: 'batch-1',
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
-    };
+    const { data, error } = await supabase
+      .from('seats')
+      .update({ 
+        phone_number: phoneResult.e164!,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', seatId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to update seat phone:', error);
+      throw new Error('Failed to update seat phone number');
+    }
+
+    return data as Seat;
+  },
+
+  /**
+   * Delete seats
+   */
+  async deleteSeats(seatIds: string[]): Promise<void> {
+    const { error } = await supabase
+      .from('seats')
+      .delete()
+      .in('id', seatIds);
+
+    if (error) {
+      console.error('Failed to delete seats:', error);
+      throw new Error('Failed to delete seats');
+    }
   }
 };
 
@@ -173,7 +214,7 @@ export const seatApi = {
  */
 function generateSeatCode(): string {
   const prefix = 'SC';
-  const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
-  const suffix = 'X';
-  return `${prefix}-${randomPart}-${suffix}`;
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${timestamp}-${randomPart}`;
 }

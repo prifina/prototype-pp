@@ -26,19 +26,16 @@ export type SeatStatus = 'pending' | 'active' | 'expired' | 'revoked';
 
 export interface Seat {
   id: string;
-  show_id: string; // Updated from production_id to match new Show model
-  phone_e164?: string;
-  phone_original_input?: string; // Store original input for audit/support
-  phone_hash?: string;
-  status: SeatStatus;
-  start_at?: string;
-  end_at?: string;
-  expires_at?: string; // When this seat expires
+  show_id: string;
   seat_code: string;
-  qr_url?: string;
-  license_batch_id?: string; // Group seats from same CSV import
-  wa_id?: string; // WhatsApp ID after binding
-  binding_completed_at?: string; // When seat was bound to phone
+  phone_number?: string; // Updated to match Supabase table
+  whatsapp_id?: string;
+  twin_id?: string;
+  profile_name?: string;
+  profile_id?: string; // Added to match Supabase table
+  status: SeatStatus;
+  expires_at?: string;
+  bound_at?: string; // Added to match Supabase table
   created_at: string;
   updated_at: string;
 }

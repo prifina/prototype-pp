@@ -157,10 +157,10 @@ export const CSVImport: React.FC<CSVImportProps> = ({ showId, showName, onImport
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Upload className="w-5 h-5" />
-          Import Seats for {showName}
+          Bulk Import via CSV
         </CardTitle>
         <CardDescription>
-          Upload a CSV file with participant names and phone numbers to create seats
+          Upload a CSV file to create multiple seats at once for {showName}
         </CardDescription>
       </CardHeader>
 

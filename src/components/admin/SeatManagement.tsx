@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Plus, MoreHorizontal, QrCode, Link, Ban, RotateCcw, Upload, FileText } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CSVImport } from './CSVImport';
+import { ManualSeatEntry } from './ManualSeatEntry';
 import { QRPackGenerator } from './QRPackGenerator';
 import { AuditLog } from './AuditLog';
 import { seatApi } from '@/services/seatApi';
@@ -269,7 +270,7 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
           </TabsTrigger>
           <TabsTrigger value="import" className="flex items-center gap-2">
             <Upload className="w-4 h-4" />
-            CSV Import
+            Create New Seats
           </TabsTrigger>
           <TabsTrigger value="qr-pack" className="flex items-center gap-2">
             <QrCode className="w-4 h-4" />
@@ -312,7 +313,7 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
                       <TableHead>Phone</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
-                      <TableHead>Batch</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -326,15 +327,8 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
                           {getStatusBadge(seat.status)}
                         </TableCell>
                         <TableCell>
-                          {seat.phone_e164 ? (
-                            <div>
-                              <div className="font-mono text-sm">{formatPhoneForDisplay(seat.phone_e164)}</div>
-                              {seat.phone_original_input !== seat.phone_e164 && (
-                                <div className="text-xs text-muted-foreground">
-                                  Original: {seat.phone_original_input}
-                                </div>
-                              )}
-                            </div>
+                          {seat.phone_number ? (
+                            <div className="font-mono text-sm">{formatPhoneForDisplay(seat.phone_number)}</div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -349,7 +343,7 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
                           }
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {seat.license_batch_id ? seat.license_batch_id.slice(0, 8) + '...' : '-'}
+                          {seat.profile_id ? 'Claimed' : 'Available'}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -391,11 +385,18 @@ export const SeatManagement: React.FC<SeatManagementProps> = ({
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">
-          <CSVImport 
-            showId={selectedProduction}
-            showName={currentShow?.show_name || 'Unknown Show'}
-            onImportComplete={handleImportComplete}
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ManualSeatEntry
+              showId={selectedProduction}
+              showName={currentShow?.show_name || 'Unknown Show'}
+              onSeatsCreated={handleImportComplete}
+            />
+            <CSVImport 
+              showId={selectedProduction}
+              showName={currentShow?.show_name || 'Unknown Show'}
+              onImportComplete={handleImportComplete}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="qr-pack" className="space-y-4">

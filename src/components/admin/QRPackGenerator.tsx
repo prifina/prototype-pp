@@ -159,8 +159,8 @@ export const QRPackGenerator: React.FC<QRPackGeneratorProps> = ({ seats, showNam
             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
               {filteredSeats.slice(0, 20).map(seat => (
                 <Badge key={seat.id} variant="outline" className="text-xs">
-                  {seat.seat_code.split('-').pop()} • {seat.phone_e164 ? 
-                    seat.phone_e164.slice(-4) : 'No phone'}
+                  {seat.seat_code.split('-').pop()} • {seat.phone_number ? 
+                    seat.phone_number.slice(-4) : 'No phone'}
                 </Badge>
               ))}
               {filteredSeats.length > 20 && (
@@ -313,7 +313,7 @@ function generateQRPackHTML(seats: Seat[], layout: LayoutOption, showName: strin
                     <div class="show-name">${showName}</div>
                     <img src="${generateQRUrl(seat.seat_code)}" alt="QR Code" class="qr-image">
                     <div class="seat-code">${seat.seat_code}</div>
-                    <div class="phone-hint">Phone: ...${seat.phone_e164?.slice(-4) || '????'}</div>
+                    <div class="phone-hint">Phone: ...${seat.phone_number?.slice(-4) || '????'}</div>
                     <div class="instructions">
                         Scan QR code or tap link to start WhatsApp chat with your AI Physio Twin.
                         Keep this card for reference.
