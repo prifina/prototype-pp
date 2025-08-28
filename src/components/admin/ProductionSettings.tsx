@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,33 +8,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Edit, Trash2, Key, Calendar, Users, AlertTriangle } from 'lucide-react';
-
-// Mock data
-const mockProductions = [
-  {
-    id: '1',
-    name: 'Demo Production',
-    seat_limit: 50,
-    start_at: '2024-01-01T00:00:00Z',
-    end_at: '2024-12-31T23:59:59Z',
-    active_seats: 24,
-    created_at: '2023-12-15T10:00:00Z'
-  },
-  {
-    id: '2',
-    name: 'Phantom of the Opera 2024',
-    seat_limit: 75,
-    start_at: '2024-02-01T00:00:00Z',
-    end_at: '2024-11-30T23:59:59Z',
-    active_seats: 42,
-    created_at: '2024-01-10T14:30:00Z'
-  }
-];
+import { supabase } from '@/integrations/supabase/client';
 
 export const ProductionSettings = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProduction, setEditingProduction] = useState<any>(null);
+  const [productions, setProductions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     seat_limit: 50,
@@ -42,6 +23,26 @@ export const ProductionSettings = () => {
     end_at: '',
     passcode: ''
   });
+
+  useEffect(() => {
+    loadProductions();
+  }, []);
+
+  const loadProductions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('shows')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setProductions(data || []);
+    } catch (error) {
+      console.error('Error loading productions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateProduction = () => {
     console.log('Creating production:', formData);
@@ -218,50 +219,69 @@ export const ProductionSettings = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockProductions.map((production) => (
-                <TableRow key={production.id}>
-                  <TableCell className="font-medium">
-                    {production.name}
-                  </TableCell>
-                  <TableCell>
-                    {getStatusBadge(production)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center">
-                      <Users className="w-4 h-4 mr-1 text-muted-foreground" />
-                      {production.active_seats}/{production.seat_limit}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    <div className="flex items-center text-muted-foreground">
-                      <Calendar className="w-4 h-4 mr-1" />
-                      {new Date(production.start_at).toLocaleDateString()} - {new Date(production.end_at).toLocaleDateString()}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {new Date(production.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-1">
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => handleEditProduction(production)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => handleDeleteProduction(production.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mr-2"></div>
+                      Loading productions...
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : productions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <div className="text-muted-foreground">
+                      No productions found. Create your first production to get started.
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                productions.map((production) => (
+                  <TableRow key={production.id}>
+                    <TableCell className="font-medium">
+                      {production.name}
+                    </TableCell>
+                    <TableCell>
+                      {getStatusBadge(production)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center">
+                        <Users className="w-4 h-4 mr-1 text-muted-foreground" />
+                        0/{production.seat_limit}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <div className="flex items-center text-muted-foreground">
+                        <Calendar className="w-4 h-4 mr-1" />
+                        {new Date(production.created_at).toLocaleDateString()}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(production.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center space-x-1">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleEditProduction(production)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDeleteProduction(production.id)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

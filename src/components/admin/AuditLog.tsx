@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Search, FileText, Download, Filter } from 'lucide-react';
 import { format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AuditLogEntry {
   id: string;
@@ -31,95 +32,40 @@ export const AuditLog: React.FC<AuditLogProps> = ({ showId }) => {
   const [actionFilter, setActionFilter] = useState('all');
   const [entityFilter, setEntityFilter] = useState('all');
 
-  // Mock audit log data - replace with actual API
-  const mockAuditLogs: AuditLogEntry[] = [
-    {
-      id: '1',
-      timestamp: new Date().toISOString(),
-      actor: 'admin@productionphysio.com',
-      action: 'seat.create',
-      entity: 'seat',
-      entityId: 'seat-123',
-      details: 'Created seat via CSV import (batch: batch-456)',
-      ipAddress: '192.168.1.100'
-    },
-    {
-      id: '2',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      actor: 'admin@productionphysio.com', 
-      action: 'seat.phone_update',
-      entity: 'seat',
-      entityId: 'seat-123',
-      details: 'Updated phone from 07700900123 to +447700900456',
-      ipAddress: '192.168.1.100'
-    },
-    {
-      id: '3',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      actor: 'system',
-      action: 'seat.binding',
-      entity: 'seat',
-      entityId: 'seat-123',
-      details: 'Seat bound to WhatsApp ID: wa.gBEGkYiEB1VVAg',
-      ipAddress: 'webhook'
-    },
-    {
-      id: '4',
-      timestamp: new Date(Date.now() - 10800000).toISOString(),
-      actor: 'admin@productionphysio.com',
-      action: 'seat.revoke',
-      entity: 'seat', 
-      entityId: 'seat-124',
-      details: 'Seat revoked due to policy violation',
-      ipAddress: '192.168.1.100'
-    },
-    {
-      id: '5',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      actor: 'system',
-      action: 'seat.expiry',
-      entity: 'seat',
-      entityId: 'seat-125',
-      details: 'Seat expired automatically at end of duration',
-      ipAddress: 'scheduler'
-    }
-  ];
-
   useEffect(() => {
     loadAuditLogs();
   }, [showId, searchQuery, actionFilter, entityFilter]);
 
-  const loadAuditLogs = () => {
+  const loadAuditLogs = async () => {
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      let filteredLogs = mockAuditLogs;
+    try {
+      const { data, error } = await supabase
+        .from('audit_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
 
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        filteredLogs = filteredLogs.filter(log =>
-          log.actor.toLowerCase().includes(query) ||
-          log.action.toLowerCase().includes(query) ||
-          log.details.toLowerCase().includes(query) ||
-          log.entityId.toLowerCase().includes(query)
-        );
-      }
+      if (error) throw error;
 
-      if (actionFilter !== 'all') {
-        filteredLogs = filteredLogs.filter(log => 
-          log.action.startsWith(actionFilter)
-        );
-      }
+      // Transform data to match expected format
+      const transformedLogs = (data || []).map(log => ({
+        id: log.id,
+        timestamp: log.created_at,
+        actor: log.actor,
+        action: log.action,
+        entity: log.entity,
+        entityId: log.entity_id || '',
+        details: log.details || '',
+        ipAddress: log.ip_address || ''
+      }));
 
-      if (entityFilter !== 'all') {
-        filteredLogs = filteredLogs.filter(log => 
-          log.entity === entityFilter
-        );
-      }
-
-      setLogs(filteredLogs);
+      setLogs(transformedLogs);
+    } catch (error) {
+      console.error('Error loading audit logs:', error);
+      setLogs([]);
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
   };
 
   const getActionBadge = (action: string) => {

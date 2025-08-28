@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,34 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { User, Edit, MessageSquare, Save, AlertCircle } from 'lucide-react';
-
-// Mock data
-const mockProfiles = [
-  {
-    id: '1',
-    seat_id: 'seat-1',
-    name: 'John Doe',
-    role: 'Lead Actor',
-    show_name: 'Phantom of the Opera',
-    tour_or_resident: 'tour' as const,
-    goals: 'Improve sleep quality during tour',
-    injuries_notes: 'Previous ankle sprain in 2023',
-    sleep_env: { environment: 'hotel', noise_level: 'moderate', light_control: 'limited' },
-    food_constraints: { allergies: ['nuts'], intolerances: ['lactose'], dietary_preferences: ['vegetarian'] },
-    created_at: '2024-01-15T10:00:00Z',
-    last_active: '2024-01-20T14:30:00Z'
-  }
-];
-
-const mockAdminNotes = [
-  {
-    id: '1',
-    seat_id: 'seat-1',
-    note: 'User mentioned recurring back pain during last chat. Recommended stretching routine.',
-    created_by: 'admin@production.com',
-    created_at: '2024-01-18T09:15:00Z'
-  }
-];
+import { supabase } from '@/integrations/supabase/client';
 
 export const ProfileManagement = () => {
   const [selectedProfile, setSelectedProfile] = useState<string>('');
@@ -44,9 +17,32 @@ export const ProfileManagement = () => {
   const [isNoteDialogOpen, setIsNoteDialogOpen] = useState(false);
   const [editData, setEditData] = useState<any>({});
   const [newNote, setNewNote] = useState('');
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [adminNotes, setAdminNotes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadProfiles();
+  }, []);
+
+  const loadProfiles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setProfiles(data || []);
+    } catch (error) {
+      console.error('Error loading profiles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEditProfile = (profileId: string) => {
-    const profile = mockProfiles.find(p => p.id === profileId);
+    const profile = profiles.find(p => p.id === profileId);
     if (profile) {
       setEditData(profile);
       setIsEditDialogOpen(true);
@@ -89,11 +85,17 @@ export const ProfileManagement = () => {
                 <SelectValue placeholder="Choose a profile to manage" />
               </SelectTrigger>
               <SelectContent>
-                {mockProfiles.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>
-                    {profile.name} - {profile.role}
-                  </SelectItem>
-                ))}
+                {loading ? (
+                  <SelectItem value="">Loading profiles...</SelectItem>
+                ) : profiles.length === 0 ? (
+                  <SelectItem value="">No profiles found</SelectItem>
+                ) : (
+                  profiles.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.first_name} {profile.last_name} - {profile.email}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -150,110 +152,51 @@ export const ProfileManagement = () => {
           </TabsList>
 
           <TabsContent value="profile" className="space-y-4">
-            {mockProfiles
-              .filter(profile => profile.id === selectedProfile)
-              .map(profile => (
-                <div key={profile.id} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Basic Information */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center">
-                        <User className="w-5 h-5 mr-2" />
-                        Basic Information
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+            {loading ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Loading profile...</p>
+                </CardContent>
+              </Card>
+            ) : profiles.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <User className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No profiles found</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Profiles will appear here once users complete onboarding
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              profiles
+                .filter(profile => profile.id === selectedProfile)
+                .map(profile => (
+                  <Card key={profile.id}>
+                    <CardContent className="pt-6">
+                      <div className="space-y-4">
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">Name</Label>
-                          <p className="font-medium">{profile.name}</p>
+                          <p className="font-medium">{profile.first_name} {profile.last_name}</p>
                         </div>
                         <div>
-                          <Label className="text-sm font-medium text-muted-foreground">Role</Label>
-                          <p className="font-medium">{profile.role}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-sm font-medium text-muted-foreground">Show</Label>
-                          <p className="font-medium">{profile.show_name}</p>
+                          <Label className="text-sm font-medium text-muted-foreground">Email</Label>
+                          <p className="font-medium">{profile.email}</p>
                         </div>
                         <div>
-                          <Label className="text-sm font-medium text-muted-foreground">Type</Label>
-                          <Badge variant={profile.tour_or_resident === 'tour' ? 'default' : 'secondary'}>
-                            {profile.tour_or_resident === 'tour' ? 'Touring' : 'Resident'}
-                          </Badge>
+                          <Label className="text-sm font-medium text-muted-foreground">Phone</Label>
+                          <p className="font-medium">{profile.phone_number}</p>
                         </div>
-                      </div>
-                      
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">Goals</Label>
-                        <p className="text-sm mt-1">{profile.goals}</p>
-                      </div>
-                      
-                      {profile.injuries_notes && (
                         <div>
-                          <Label className="text-sm font-medium text-muted-foreground flex items-center">
-                            <AlertCircle className="w-3 h-3 mr-1" />
-                            Injury Notes
-                          </Label>
-                          <p className="text-sm mt-1 text-amber-700">{profile.injuries_notes}</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Health Context */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Health Context</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">Sleep Environment</Label>
-                        <div className="text-sm mt-1">
-                          <p><strong>Location:</strong> {profile.sleep_env?.environment}</p>
-                          <p><strong>Noise:</strong> {profile.sleep_env?.noise_level}</p>
-                          <p><strong>Light Control:</strong> {profile.sleep_env?.light_control}</p>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <Label className="text-sm font-medium text-muted-foreground">Food Constraints</Label>
-                        <p className="text-sm mt-1">{formatConstraints(profile.food_constraints)}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Activity Summary */}
-                  <Card className="lg:col-span-2">
-                    <CardHeader>
-                      <CardTitle>Activity Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-primary">127</div>
-                          <p className="text-sm text-muted-foreground">Total Messages</p>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">18</div>
-                          <p className="text-sm text-muted-foreground">Active Days</p>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">34</div>
-                          <p className="text-sm text-muted-foreground">Sleep Guidance</p>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">23</div>
-                          <p className="text-sm text-muted-foreground">Nutrition Help</p>
+                          <Label className="text-sm font-medium text-muted-foreground">Created</Label>
+                          <p className="text-sm">{new Date(profile.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
-                </div>
-              ))}
+                ))
+            )}
           </TabsContent>
 
           <TabsContent value="notes" className="space-y-4">
@@ -265,22 +208,12 @@ export const ProfileManagement = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockAdminNotes.map((note) => (
-                    <div key={note.id} className="border-l-4 border-primary pl-4 py-2">
-                      <p className="text-sm">{note.note}</p>
-                      <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-                        <span>By: {note.created_by}</span>
-                        <span>{new Date(note.created_at).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {mockAdminNotes.length === 0 && (
-                    <p className="text-muted-foreground text-center py-8">
-                      No admin notes yet. Add the first note using the button above.
-                    </p>
-                  )}
+                <div className="text-center py-8">
+                  <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No admin notes yet</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Add the first note using the button above
+                  </p>
                 </div>
               </CardContent>
             </Card>
