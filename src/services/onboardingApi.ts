@@ -14,7 +14,7 @@ function generateQRCodeURL(waLink: string): string {
 
 // Generate WhatsApp link with prefilled message to Twilio sandbox
 function generateWhatsAppLink(seatCode: string): string {
-  const message = `seat:${seatCode}`;
+  const message = `join closer-send`;
   const encodedMessage = encodeURIComponent(message);
   
   // Direct link to Twilio WhatsApp sandbox number
