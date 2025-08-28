@@ -59,7 +59,7 @@ serve(async (req) => {
       response = await fetch(requestUrl, {
         method: "GET",
         headers: {
-          // "x-api-key": coreApiKey,
+          "x-api-key": coreApiKey,
           "Content-Type": "application/json",
         },
       });
