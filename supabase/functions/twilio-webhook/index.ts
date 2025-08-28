@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
 import { validateTwilioSignature, checkRateLimit, checkIdempotency, markProcessed, extractSeatCode } from '../_shared/twilioUtils.ts';
-import { normalizePhoneNumber, formatPhoneForStorage } from '../_shared/phoneUtils.ts';
+import { normalizePhoneNumber } from '../_shared/phoneUtils.ts';
 import { getMessageTemplate, MessageType } from '../_shared/messageTemplates.ts';
 
 const corsHeaders = {
@@ -117,12 +117,12 @@ serve(async (req) => {
 
     // Normalize phone number
     const normalizedPhone = normalizePhoneNumber(fromNumber);
-    if (!normalizedPhone) {
+    if (!normalizedPhone.isValid || !normalizedPhone.e164) {
       console.error('Invalid phone number format:', fromNumber);
       return new Response('Invalid phone number', { status: 400, headers: corsHeaders });
     }
 
-    const phoneForStorage = formatPhoneForStorage(normalizedPhone);
+    const phoneForStorage = normalizedPhone.e164;
 
     // Rate limiting check
     const rateLimit = checkRateLimit(phoneForStorage);
