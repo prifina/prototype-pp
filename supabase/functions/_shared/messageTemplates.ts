@@ -7,9 +7,28 @@ export interface MessageTemplate {
   template: string;
   buttons?: string[];
   description?: string;
+  body?: string; // For backwards compatibility
+}
+
+export enum MessageType {
+  SEAT_BOUND_SUCCESS = 'SEAT_BOUND_SUCCESS',
+  SEAT_NOT_FOUND = 'SEAT_NOT_FOUND',
+  SEAT_EXPIRED = 'SEAT_EXPIRED',
+  SEAT_ALREADY_BOUND = 'SEAT_ALREADY_BOUND',
+  SEAT_REVOKED = 'SEAT_REVOKED',
+  NO_ACTIVE_SEAT = 'NO_ACTIVE_SEAT',
+  SESSION_EXPIRED = 'SESSION_EXPIRED',
+  SYSTEM_ERROR = 'SYSTEM_ERROR'
 }
 
 export const MESSAGE_TEMPLATES: Record<string, MessageTemplate> = {
+  // Success Messages
+  SEAT_BOUND_SUCCESS: {
+    category: 'UTILITY',
+    template: "Successfully connected with the AI Performance Assistant. What do you want to discuss?",
+    body: "Successfully connected with the AI Performance Assistant. What do you want to discuss?",
+    description: "Sent when seat binding is successful"
+  },
   // Onboarding & Access
   onboarding_help_v1: {
     category: 'UTILITY',
@@ -76,6 +95,56 @@ export const MESSAGE_TEMPLATES: Record<string, MessageTemplate> = {
     description: "Sent during system maintenance or errors"
   },
   
+  // Error States - Legacy format support
+  SEAT_NOT_FOUND: {
+    category: 'UTILITY',
+    template: "Access code not recognized. Please check with your company manager or complete onboarding.",
+    body: "Access code not recognized. Please check with your company manager or complete onboarding.",
+    description: "Sent when seat code doesn't exist"
+  },
+  
+  SEAT_EXPIRED: {
+    category: 'UTILITY',
+    template: "Your AI Performance Assistant access has expired. Please contact your production if you need continued access.",
+    body: "Your AI Performance Assistant access has expired. Please contact your production if you need continued access.",
+    description: "Sent when seat is expired"
+  },
+  
+  SEAT_ALREADY_BOUND: {
+    category: 'UTILITY',
+    template: "This access code is linked to another number. Please contact support if you believe this is an error.",
+    body: "This access code is linked to another number. Please contact support if you believe this is an error.",
+    description: "Sent when seat already bound to different phone"
+  },
+  
+  SEAT_REVOKED: {
+    category: 'UTILITY',
+    template: "Your access has been revoked. Please contact your company manager if you have questions.",
+    body: "Your access has been revoked. Please contact your company manager if you have questions.",
+    description: "Sent when seat is revoked"
+  },
+  
+  NO_ACTIVE_SEAT: {
+    category: 'UTILITY',
+    template: "This number isn't enabled. Please contact your company manager to request access.",
+    body: "This number isn't enabled. Please contact your company manager to request access.",
+    description: "Sent when phone has no active seat"
+  },
+  
+  SESSION_EXPIRED: {
+    category: 'UTILITY',
+    template: "Ready to continue your coaching? Just reply to get started.",
+    body: "Ready to continue your coaching? Just reply to get started.",
+    description: "Sent when user messages after 24-hour window"
+  },
+  
+  SYSTEM_ERROR: {
+    category: 'UTILITY',
+    template: "Service temporarily unavailable. Please try again in a few minutes.",
+    body: "Service temporarily unavailable. Please try again in a few minutes.",
+    description: "Sent during system errors"
+  },
+
   // Red Flag Escalation
   red_flag_escalation_v1: {
     category: 'UTILITY',
@@ -106,6 +175,32 @@ export function processTemplate(templateKey: string, variables: string[] = []): 
  */
 export function isValidTemplate(templateKey: string): boolean {
   return templateKey in MESSAGE_TEMPLATES;
+}
+
+/**
+ * Get message template by type
+ */
+export function getMessageTemplate(messageType: MessageType, variables?: Record<string, string>): MessageTemplate {
+  const template = MESSAGE_TEMPLATES[messageType];
+  if (!template) {
+    throw new Error(`Template not found: ${messageType}`);
+  }
+  
+  let processedTemplate = { ...template };
+  
+  // Replace variables in template/body if provided
+  if (variables) {
+    const replaceVars = (text: string) => {
+      return text.replace(/\{\{(\w+)\}\}/g, (match, key) => variables[key] || match);
+    };
+    
+    processedTemplate.template = replaceVars(processedTemplate.template);
+    if (processedTemplate.body) {
+      processedTemplate.body = replaceVars(processedTemplate.body);
+    }
+  }
+  
+  return processedTemplate;
 }
 
 /**

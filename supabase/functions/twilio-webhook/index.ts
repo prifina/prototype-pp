@@ -118,7 +118,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-          { message: template.body }
+        { message: template.body || template.template }
         );
         return new Response('Seat not found', { status: 200, headers: corsHeaders });
       }
@@ -130,7 +130,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-          { message: template.body }
+        { message: template.body || template.template }
         );
         return new Response('Seat expired', { status: 200, headers: corsHeaders });
       }
@@ -142,7 +142,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-          { message: template.body }
+        { message: template.body || template.template }
         );
         return new Response('Seat already bound', { status: 200, headers: corsHeaders });
       }
@@ -163,7 +163,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-          { message: template.body }
+        { message: template.body || template.template }
         );
         return new Response('Database error', { status: 500, headers: corsHeaders });
       }
@@ -187,7 +187,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
 
       markProcessed(messageSid);
@@ -208,7 +208,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
       return new Response('No active seat', { status: 200, headers: corsHeaders });
     }
@@ -226,7 +226,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
       return new Response('Seat expired', { status: 200, headers: corsHeaders });
     }
@@ -238,7 +238,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
       return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
@@ -251,7 +251,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
       return new Response('Session expired', { status: 200, headers: corsHeaders });
     }
@@ -266,7 +266,31 @@ serve(async (req) => {
       message_type: 'chat'
     });
 
-    // Forward to AI chat service
+    // Forward to AI chat service - fetch profile data first
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', activeSeat.profile_id)
+      .single();
+
+    const { data: showData } = await supabase
+      .from('shows')
+      .select('name')
+      .eq('id', activeSeat.show_id)
+      .single();
+
+    const userContext = {
+      name: profileData ? `${profileData.first_name} ${profileData.last_name}` : 'User',
+      role: profileData?.tour_or_resident || 'performer',
+      show_name: showData?.name || 'Unknown Show',
+      tour_or_resident: profileData?.tour_or_resident || 'resident',
+      goals: profileData?.health_goals || {},
+      sleep_env: profileData?.sleep_environment || {},
+      food_constraints: profileData?.dietary_info || {},
+      injuries_notes: profileData?.additional_notes || '',
+      phone_e164: phoneForStorage
+    };
+
     const chatResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ai-twin-chat`, {
       method: 'POST',
       headers: {
@@ -274,10 +298,10 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        seat_id: activeSeat.id,
         message: messageBody,
-        twinId: activeSeat.twin_id,
-        sessionId: activeSeat.id, // Use seat ID as session ID
-        phoneNumber: phoneForStorage
+        channel: 'whatsapp',
+        user_context: userContext
       }),
     });
 
@@ -288,7 +312,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body }
+        { message: template.body || template.template }
       );
       return new Response('AI service error', { status: 500, headers: corsHeaders });
     }
