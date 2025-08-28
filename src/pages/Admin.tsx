@@ -8,6 +8,7 @@ import { Analytics } from '@/components/admin/Analytics';
 import { SystemSettings } from '@/components/admin/SystemSettings';
 import { AuditLog } from '@/components/admin/AuditLog';
 import { SystemStatus } from '@/components/admin/SystemStatus';
+import { AdminHeader } from '@/components/admin/AdminHeader';
 
 export const Admin = () => {
   const [selectedProduction, setSelectedProduction] = useState<string>('');
@@ -26,6 +27,7 @@ export const Admin = () => {
   if (currentView === 'production-detail' && selectedProduction) {
     return (
       <div className="min-h-screen bg-background">
+        <AdminHeader />
         <div className="container mx-auto px-4 py-8">
           <ProductionDetail 
             productionId={selectedProduction}
@@ -38,11 +40,9 @@ export const Admin = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <AdminHeader />
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            Admin Console
-          </h1>
           <p className="text-muted-foreground">
             Manage productions, seats, and view analytics for your AI Performance Assistant
           </p>

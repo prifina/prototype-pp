@@ -6,7 +6,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import { Onboarding } from "./pages/Onboarding";
 import { Admin } from "./pages/Admin";
+import { Auth } from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import { AuthGuard } from "./components/auth/AuthGuard";
 
 const queryClient = new QueryClient();
 
@@ -18,7 +20,15 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Onboarding />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route 
+            path="/admin" 
+            element={
+              <AuthGuard requireAdmin={true}>
+                <Admin />
+              </AuthGuard>
+            } 
+          />
           <Route path="/:twinName" element={<Index />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

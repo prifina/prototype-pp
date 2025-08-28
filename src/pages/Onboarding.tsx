@@ -117,6 +117,16 @@ export const Onboarding = () => {
               <div className={`w-3 h-3 rounded-full ${['consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
               <div className={`w-3 h-3 rounded-full ${currentStep === 'confirmation' ? 'bg-primary' : 'bg-muted'}`} />
             </div>
+            
+            {/* Admin Access Link */}
+            <div className="mt-6 pt-4 border-t border-border">
+              <a 
+                href="/auth" 
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Admin Access
+              </a>
+            </div>
           </div>
           
           {renderCurrentStep()}
