@@ -7,7 +7,7 @@ import { ProductionDetail } from '@/components/admin/ProductionDetail';
 import { Analytics } from '@/components/admin/Analytics';
 import { SystemSettings } from '@/components/admin/SystemSettings';
 import { AuditLog } from '@/components/admin/AuditLog';
-import DatabaseSetupGuide from '@/components/admin/DatabaseSetupGuide';
+import { SystemStatus } from '@/components/admin/SystemStatus';
 
 export const Admin = () => {
   const [selectedProduction, setSelectedProduction] = useState<string>('');
@@ -73,7 +73,7 @@ export const Admin = () => {
           </TabsList>
 
           <TabsContent value="database" className="space-y-6">
-            <DatabaseSetupGuide />
+            <SystemStatus />
           </TabsContent>
 
           <TabsContent value="productions" className="space-y-6">
