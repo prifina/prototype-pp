@@ -131,20 +131,61 @@ serve(async (req) => {
     // Build AI context
     const systemContext = buildAIContext(user_context, channel);
     
-    // Call the existing middleware API for AI response with correct parameters
+    // Call the core API directly since middleware API seems to have configuration issues
+    const CORE_API_URL = Deno.env.get('CORE_API_URL');
+    const CORE_API_KEY = Deno.env.get('CORE_API_KEY');
+    
+    if (!CORE_API_URL || !CORE_API_KEY) {
+      console.error('Missing core API configuration');
+      // Fallback response
+      const fallbackResponse = needsDisclaimer 
+        ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
+        : "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
+        
+      return new Response(JSON.stringify({ 
+        response: fallbackResponse,
+        disclaimer_added: needsDisclaimer,
+        error: 'API configuration missing'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Try core API health check first
+    const healthResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/core-api`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'health-check' })
+    });
+
+    if (!healthResponse.ok) {
+      console.error('Core API health check failed:', healthResponse.status);
+      const fallbackResponse = needsDisclaimer 
+        ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
+        : "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
+        
+      return new Response(JSON.stringify({ 
+        response: fallbackResponse,
+        disclaimer_added: needsDisclaimer,
+        error: 'Core API unavailable'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Build proper payload for core API
     const aiPayload = {
-      knowledgebaseId: 'production-physio', // Default knowledgebase
+      stream: false, // Disable streaming for now to simplify
+      statement: `${systemContext}\n\nUser message: ${message}`,
+      knowledgebaseId: 'production-physio',
       userId: user_context.phone_e164 || 'anonymous',
-      statement: message,
       sessionId: `seat_${seat_id}`,
-      index: 0,
-      stopLoading: () => {}, // Dummy function for compatibility
-      stream: true,
-      model: 'gpt-4',
-      scoreLimit: 0.3
+      scoreLimit: 0.3,
+      debug: true,
+      userLanguage: 'English'
     };
 
-    const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/middleware-api`, {
+    const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/core-api`, {
       method: 'POST', 
       headers: {
         'Content-Type': 'application/json',
@@ -154,41 +195,37 @@ serve(async (req) => {
     });
 
     if (!middlewareResponse.ok) {
-      throw new Error(`Middleware API error: ${middlewareResponse.status}`);
+      const errorText = await middlewareResponse.text();
+      console.error(`Core API error ${middlewareResponse.status}:`, errorText);
+      throw new Error(`Core API error: ${middlewareResponse.status}`);
     }
 
-    // Process streaming response from middleware-api
-    const reader = middlewareResponse.body?.getReader();
+    // Process response from core API
+    const responseData = await middlewareResponse.json();
+    console.log('Core API response:', responseData);
+    
     let aiResponse = '';
     
-    if (reader) {
-      const decoder = new TextDecoder();
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                aiResponse += data.text;
-              }
-            } catch (e) {
-              // Skip invalid JSON
-            }
-          }
-        }
+    // Extract response based on core API response format
+    if (responseData.answer) {
+      aiResponse = responseData.answer;
+    } else if (responseData.response) {
+      aiResponse = responseData.response;
+    } else if (responseData.text) {
+      aiResponse = responseData.text;
+    } else if (responseData.body && typeof responseData.body === 'string') {
+      // Try to parse body if it's a string
+      try {
+        const bodyData = JSON.parse(responseData.body);
+        aiResponse = bodyData.answer || bodyData.response || bodyData.text || '';
+      } catch (e) {
+        aiResponse = responseData.body;
       }
     }
     
     // Fallback if no response received
     if (!aiResponse) {
-      console.error('No AI response received from middleware');
+      console.error('No AI response received from core API:', responseData);
       aiResponse = 'Sorry, I had trouble processing your message. Please try again.';
     }
 
