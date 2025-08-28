@@ -131,17 +131,21 @@ serve(async (req) => {
     // Build AI context
     const systemContext = buildAIContext(user_context, channel);
     
-    // Call the existing middleware API for AI response
+    // Call the existing middleware API for AI response with correct parameters
     const aiPayload = {
+      knowledgebaseId: 'production-physio', // Default knowledgebase
+      userId: user_context.phone_e164 || 'anonymous',
+      statement: message,
       sessionId: `seat_${seat_id}`,
-      message: message,
-      userContext: systemContext,
-      channel: channel,
-      includeDisclaimer: needsDisclaimer
+      index: 0,
+      stopLoading: () => {}, // Dummy function for compatibility
+      stream: true,
+      model: 'gpt-4',
+      scoreLimit: 0.3
     };
 
     const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/middleware-api`, {
-      method: 'POST',
+      method: 'POST', 
       headers: {
         'Content-Type': 'application/json',
         'Authorization': req.headers.get('authorization') || ''
@@ -153,7 +157,7 @@ serve(async (req) => {
       throw new Error(`Middleware API error: ${middlewareResponse.status}`);
     }
 
-    // Process streaming response
+    // Process streaming response from middleware-api
     const reader = middlewareResponse.body?.getReader();
     let aiResponse = '';
     
@@ -180,6 +184,12 @@ serve(async (req) => {
           }
         }
       }
+    }
+    
+    // Fallback if no response received
+    if (!aiResponse) {
+      console.error('No AI response received from middleware');
+      aiResponse = 'Sorry, I had trouble processing your message. Please try again.';
     }
 
     // Add disclaimer if needed

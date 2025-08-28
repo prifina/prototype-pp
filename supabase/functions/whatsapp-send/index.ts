@@ -84,7 +84,7 @@ async function findSeatByPhone(supabase: any, phoneE164: string): Promise<any> {
   const { data: seat } = await supabase
     .from('seats')
     .select('id, status')
-    .eq('phone_e164', phoneE164)
+    .eq('phone_number', phoneE164) // Fixed: use phone_number field, not phone_e164
     .in('status', ['active', 'pending'])
     .single();
     
@@ -188,7 +188,8 @@ serve(async (req) => {
     }
 
     // Find seat for logging (best effort - don't fail if not found)
-    const seat = await findSeatByPhone(supabase, to.replace('whatsapp:', '').replace(/\D/g, ''));
+    const cleanPhone = to.replace('whatsapp:', '');
+    const seat = await findSeatByPhone(supabase, cleanPhone);
 
     // Log the outbound message
     if (seat) {

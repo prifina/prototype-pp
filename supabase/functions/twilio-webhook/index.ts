@@ -138,7 +138,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: 'Sandbox activated! Now send your seat code in the format: seat:YOUR_CODE' }
+        { text: { body: 'Sandbox activated! Now send your seat code in the format: seat:YOUR_CODE' } }
       );
       return new Response('Sandbox activation acknowledged', { status: 200, headers: corsHeaders });
     }
@@ -163,7 +163,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
         );
         return new Response('Seat not found', { status: 200, headers: corsHeaders });
       }
@@ -175,7 +175,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
         );
         return new Response('Seat expired', { status: 200, headers: corsHeaders });
       }
@@ -187,7 +187,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
         );
         return new Response('Seat already bound', { status: 200, headers: corsHeaders });
       }
@@ -208,7 +208,7 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_URL') ?? '',
           req.headers.get('Authorization') ?? '',
           fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
         );
         return new Response('Database error', { status: 500, headers: corsHeaders });
       }
@@ -232,7 +232,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
 
       markProcessed(messageSid);
@@ -253,7 +253,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
       return new Response('No active seat', { status: 200, headers: corsHeaders });
     }
@@ -271,7 +271,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
       return new Response('Seat expired', { status: 200, headers: corsHeaders });
     }
@@ -283,7 +283,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
       return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
@@ -296,7 +296,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
       return new Response('Session expired', { status: 200, headers: corsHeaders });
     }
@@ -364,7 +364,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { message: template.body || template.template }
+        { text: { body: template.body || template.template } }
       );
       return new Response('AI service error', { status: 500, headers: corsHeaders });
     }
@@ -389,7 +389,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       req.headers.get('Authorization') ?? '',
       fromNumber,
-      { message: messageToSend }
+      { text: { body: messageToSend } } // Fixed: use 'text' field with 'body' property
     );
 
     markProcessed(messageSid);
