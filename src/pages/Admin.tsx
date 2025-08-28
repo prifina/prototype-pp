@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Database, Settings, Users, BarChart3, FileText, Theater } from 'lucide-react';
+import { Database, Settings, Users, BarChart3, FileText, Theater, TestTube } from 'lucide-react';
 import { ProductionList } from '@/components/admin/ProductionList';
 import { ProductionDetail } from '@/components/admin/ProductionDetail';
 import { Analytics } from '@/components/admin/Analytics';
@@ -9,6 +9,7 @@ import { SystemSettings } from '@/components/admin/SystemSettings';
 import { AuditLog } from '@/components/admin/AuditLog';
 import { SystemStatus } from '@/components/admin/SystemStatus';
 import { AdminHeader } from '@/components/admin/AdminHeader';
+import { TestWhatsAppButton } from '@/components/TestWhatsAppButton';
 
 export const Admin = () => {
   const [selectedProduction, setSelectedProduction] = useState<string>('');
@@ -49,7 +50,7 @@ export const Admin = () => {
         </div>
 
         <Tabs defaultValue="productions" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="database" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
               Setup
@@ -69,6 +70,10 @@ export const Admin = () => {
             <TabsTrigger value="settings" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
               Settings
+            </TabsTrigger>
+            <TabsTrigger value="debug" className="flex items-center gap-2">
+              <TestTube className="h-4 w-4" />
+              Debug
             </TabsTrigger>
           </TabsList>
 
@@ -104,6 +109,14 @@ export const Admin = () => {
 
           <TabsContent value="settings" className="space-y-6">
             <SystemSettings />
+          </TabsContent>
+
+          <TabsContent value="debug" className="space-y-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold">WhatsApp Pipeline Diagnostics</h3>
+              <p className="text-muted-foreground">Test and debug the WhatsApp AI Twin integration</p>
+            </div>
+            <TestWhatsAppButton />
           </TabsContent>
         </Tabs>
       </div>
