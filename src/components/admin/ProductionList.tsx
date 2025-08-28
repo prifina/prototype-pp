@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { showApi } from '@/services/showApi';
 import { Show } from '@/types/database';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ProductionListProps {
   onSelectProduction: (productionId: string) => void;
@@ -16,6 +17,7 @@ interface ProductionListProps {
 
 export const ProductionList = ({ onSelectProduction }: ProductionListProps) => {
   const [productions, setProductions] = useState<Show[]>([]);
+  const [seatCounts, setSeatCounts] = useState<Record<string, number>>({});
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
@@ -38,6 +40,18 @@ export const ProductionList = ({ onSelectProduction }: ProductionListProps) => {
       setIsLoading(true);
       const shows = await showApi.listShows();
       setProductions(shows);
+      
+      // Load seat counts for each production
+      const counts: Record<string, number> = {};
+      for (const show of shows) {
+        const { count } = await supabase
+          .from('seats')
+          .select('*', { count: 'exact', head: true })
+          .eq('show_id', show.id)
+          .eq('status', 'active');
+        counts[show.id] = count || 0;
+      }
+      setSeatCounts(counts);
     } catch (error) {
       console.error('Failed to load productions:', error);
       toast({
@@ -296,7 +310,7 @@ export const ProductionList = ({ onSelectProduction }: ProductionListProps) => {
                       <Users className="w-4 h-4 mr-2" />
                       Seats
                     </div>
-                    <span className="font-medium">0/{production.seat_limit}</span>
+                    <span className="font-medium">{seatCounts[production.id] || 0}/{production.seat_limit}</span>
                   </div>
                   
                   {production.start_at && production.end_at && (
