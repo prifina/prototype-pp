@@ -1,1 +1,10 @@
 project_id = "fkvtnyvttgjiherassmn"
+
+[functions.test-middleware]
+verify_jwt = false
+
+[functions.twilio-webhook]
+verify_jwt = false
+
+[functions.twilio-status]
+verify_jwt = false

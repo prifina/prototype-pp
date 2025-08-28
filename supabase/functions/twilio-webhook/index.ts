@@ -39,17 +39,24 @@ async function checkSessionWindow(supabase: any, seatId: string): Promise<boolea
 }
 
 serve(async (req) => {
+  console.log(`[${new Date().toISOString()}] Twilio webhook received: ${req.method} request`);
+  console.log('Request URL:', req.url);
+  console.log('Request headers:', Object.fromEntries(req.headers.entries()));
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request handled');
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log('Initializing Supabase client...');
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
 
   try {
+    console.log('Parsing form data...');
     const formData = await req.formData();
     const twilioSignature = req.headers.get('X-Twilio-Signature') || '';
     const url = req.url;
@@ -59,19 +66,40 @@ serve(async (req) => {
     for (const [key, value] of formData.entries()) {
       params[key] = value.toString();
     }
+    console.log('Twilio form data received:', JSON.stringify(params, null, 2));
 
     // Validate Twilio signature
     const authToken = Deno.env.get('TWILIO_AUTH_TOKEN') || '';
-    const isValidSignature = await validateTwilioSignature(twilioSignature, url, params, authToken);
+    console.log('Validating Twilio signature...');
+    console.log('Signature header present:', !!twilioSignature);
+    console.log('Auth token configured:', !!authToken);
     
-    if (!isValidSignature) {
-      console.error('Invalid Twilio signature');
+    if (!twilioSignature) {
+      console.error('Missing X-Twilio-Signature header');
       return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
+    
+    if (!authToken) {
+      console.error('TWILIO_AUTH_TOKEN environment variable not set');
+      return new Response('Server configuration error', { status: 500, headers: corsHeaders });
+    }
+    
+    const isValidSignature = await validateTwilioSignature(twilioSignature, url, params, authToken);
+    console.log('Signature validation result:', isValidSignature);
+    
+    if (!isValidSignature) {
+      console.error('Twilio signature validation failed - rejecting request');
+      return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    }
+
+    console.log('Signature validated successfully, processing message...');
 
     const messageBody = params.Body?.trim() || '';
     const fromNumber = params.From?.replace('whatsapp:', '') || '';
     const messageSid = params.MessageSid || '';
+    
+    console.log(`Processing message from ${fromNumber}: "${messageBody}"`);
+    console.log(`Message SID: ${messageSid}`);
 
     // Check idempotency
     const idempotencyResult = checkIdempotency(messageSid);
@@ -269,6 +297,7 @@ serve(async (req) => {
     }
 
     // Log incoming message
+    console.log('Logging incoming message to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
       phone_number: phoneForStorage,
@@ -303,6 +332,9 @@ serve(async (req) => {
       phone_e164: phoneForStorage
     };
 
+    console.log('Calling AI twin chat service...');
+    console.log('User context:', JSON.stringify(userContext, null, 2));
+    
     const chatResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ai-twin-chat`, {
       method: 'POST',
       headers: {
@@ -317,8 +349,11 @@ serve(async (req) => {
       }),
     });
 
+    console.log('AI chat service response status:', chatResponse.status);
+    
     if (!chatResponse.ok) {
-      console.error('AI chat service error:', await chatResponse.text());
+      const errorText = await chatResponse.text();
+      console.error('AI chat service error response:', errorText);
       const template = getMessageTemplate(MessageType.SYSTEM_ERROR);
       await sendWhatsAppMessage(
         Deno.env.get('SUPABASE_URL') ?? '',
@@ -330,22 +365,26 @@ serve(async (req) => {
     }
 
     const aiResponse = await chatResponse.json();
+    console.log('AI response received:', JSON.stringify(aiResponse, null, 2));
     
     // Log AI response
+    console.log('Logging AI response to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
       phone_number: phoneForStorage,
       direction: 'outbound',
-      message_body: aiResponse.message,
+      message_body: aiResponse.response || aiResponse.message,
       message_type: 'chat'
     });
 
     // Send AI response back to user
+    console.log('Sending AI response back to user...');
+    const messageToSend = aiResponse.response || aiResponse.message || 'Sorry, I had trouble processing your message.';
     await sendWhatsAppMessage(
       Deno.env.get('SUPABASE_URL') ?? '',
       req.headers.get('Authorization') ?? '',
       fromNumber,
-      { message: aiResponse.message }
+      { message: messageToSend }
     );
 
     markProcessed(messageSid);
