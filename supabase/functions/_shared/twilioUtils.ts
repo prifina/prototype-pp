@@ -2,8 +2,6 @@
  * Shared Twilio utilities for webhook processing and security
  */
 
-import { createHmac } from "https://deno.land/std@0.168.0/crypto/crypto.ts";
-
 /**
  * Validate Twilio webhook signature for security
  * Implementation based on Twilio's signature validation algorithm
