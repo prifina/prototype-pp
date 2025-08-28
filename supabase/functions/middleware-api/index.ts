@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("Middleware API function called with method:", req.method);
+    console.log("Middleware API function called with method:", req.method); // Updated
 
     let params;
     try {
