@@ -40,11 +40,24 @@ async function sendTwilioMessage(to: string, body: any): Promise<any> {
     throw new Error('Twilio credentials not configured');
   }
   
+  // Critical debug: Check the From field value
+  console.log('=== DETAILED FROM FIELD DEBUG ===');
+  console.log('TWILIO_WHATSAPP_FROM raw value:', JSON.stringify(TWILIO_WHATSAPP_FROM));
+  console.log('TWILIO_WHATSAPP_FROM length:', TWILIO_WHATSAPP_FROM ? TWILIO_WHATSAPP_FROM.length : 'NULL');
+  console.log('TWILIO_WHATSAPP_FROM typeof:', typeof TWILIO_WHATSAPP_FROM);
+  
+  if (!TWILIO_WHATSAPP_FROM) {
+    throw new Error('TWILIO_WHATSAPP_FROM environment variable is not set');
+  }
+  
   const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
   
   const formData = new FormData();
-  formData.append('From', TWILIO_WHATSAPP_FROM!);
+  formData.append('From', TWILIO_WHATSAPP_FROM);
   formData.append('To', to);
+  
+  console.log('FormData From value:', formData.get('From'));
+  console.log('FormData To value:', formData.get('To'));
   
   if (typeof body === 'string') {
     // Plain text message
