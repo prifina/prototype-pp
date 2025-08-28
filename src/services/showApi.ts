@@ -7,13 +7,24 @@ export const showApi = {
    */
   async verifyPasscode(passcode: string): Promise<{ id: string; show_name: string; production_house_name: string }> {
     try {
-      const hashedPasscode = await hashPasscode(passcode);
-      const { data, error } = await supabase
+      // Try direct comparison first (for raw passcodes)
+      let { data, error } = await supabase
         .from('shows')
         .select('id, name, production_house')
-        .eq('passcode', hashedPasscode)
+        .eq('passcode', passcode)
         .eq('status', 'active')
         .maybeSingle();
+
+      // If no match, try hashed comparison (for hashed passcodes)
+      if (!data && !error) {
+        const hashedPasscode = await hashPasscode(passcode);
+        ({ data, error } = await supabase
+          .from('shows')
+          .select('id, name, production_house')
+          .eq('passcode', hashedPasscode)
+          .eq('status', 'active')
+          .maybeSingle());
+      }
 
       if (error) {
         console.error('Database error:', error);
@@ -61,7 +72,7 @@ export const showApi = {
         production_house_name: data.production_house || '',
         default_seat_duration_days: data.duration_days || 30,
         status: data.status as 'active' | 'archived',
-        passcode_hash: data.passcode,
+        passcode_hash: data.passcode, // Store actual passcode for admin display
         seat_limit: data.seat_limit || 100,
         start_at: data.created_at,
         end_at: null,

@@ -91,7 +91,7 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ onSuccess, isLoading
           </Button>
 
           <div className="text-center text-sm text-muted-foreground">
-            <p>Demo passcode: <span className="font-mono">DEMO123</span></p>
+            <p>Demo passcode: <span className="font-mono">DEMO100</span></p>
           </div>
         </form>
       </CardContent>

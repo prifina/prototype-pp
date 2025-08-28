@@ -55,7 +55,7 @@ export const ProductionList = ({ onSelectProduction }: ProductionListProps) => {
       const newShow = await showApi.createShow({
         show_name: formData.show_name,
         production_house_name: formData.production_house_name,
-        passcode_hash: formData.passcode, // Will be hashed by the API
+        passcode_hash: formData.passcode, // Store raw passcode for admin visibility
         seat_limit: formData.seat_limit,
         default_seat_duration_days: formData.default_seat_duration_days,
         status: 'active' as const,
