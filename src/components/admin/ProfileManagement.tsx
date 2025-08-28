@@ -189,6 +189,48 @@ export const ProfileManagement = () => {
                           <p className="font-medium">{profile.phone_number}</p>
                         </div>
                         <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Tour/Resident</Label>
+                          <p className="font-medium capitalize">{profile.tour_or_resident || 'Not specified'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Health Goals</Label>
+                          <p className="font-medium">{profile.health_goals?.goals || 'No goals specified'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Sleep Environment</Label>
+                          <div className="text-sm space-y-1">
+                            <p><strong>Environment:</strong> {profile.sleep_environment?.environment || 'Not specified'}</p>
+                            <p><strong>Noise Level:</strong> {profile.sleep_environment?.noise_level || 'Not specified'}</p>
+                            <p><strong>Light Control:</strong> {profile.sleep_environment?.light_control || 'Not specified'}</p>
+                            {profile.sleep_environment?.notes && (
+                              <p><strong>Notes:</strong> {profile.sleep_environment.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Dietary Information</Label>
+                          <div className="text-sm space-y-1">
+                            {profile.dietary_info?.allergies?.length > 0 && (
+                              <p><strong>Allergies:</strong> {profile.dietary_info.allergies.join(', ')}</p>
+                            )}
+                            {profile.dietary_info?.intolerances?.length > 0 && (
+                              <p><strong>Intolerances:</strong> {profile.dietary_info.intolerances.join(', ')}</p>
+                            )}
+                            {profile.dietary_info?.dietary_preferences?.length > 0 && (
+                              <p><strong>Preferences:</strong> {profile.dietary_info.dietary_preferences.join(', ')}</p>
+                            )}
+                            {profile.dietary_info?.notes && (
+                              <p><strong>Notes:</strong> {profile.dietary_info.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        {profile.additional_notes && (
+                          <div>
+                            <Label className="text-sm font-medium text-muted-foreground">Additional Notes</Label>
+                            <p className="font-medium">{profile.additional_notes}</p>
+                          </div>
+                        )}
+                        <div>
                           <Label className="text-sm font-medium text-muted-foreground">Created</Label>
                           <p className="text-sm">{new Date(profile.created_at).toLocaleDateString()}</p>
                         </div>
