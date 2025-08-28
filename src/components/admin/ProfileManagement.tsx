@@ -86,9 +86,9 @@ export const ProfileManagement = () => {
               </SelectTrigger>
               <SelectContent>
                 {loading ? (
-                  <SelectItem value="">Loading profiles...</SelectItem>
+                  <SelectItem value="loading" disabled>Loading profiles...</SelectItem>
                 ) : profiles.length === 0 ? (
-                  <SelectItem value="">No profiles found</SelectItem>
+                  <SelectItem value="no-profiles" disabled>No profiles found</SelectItem>
                 ) : (
                   profiles.map((profile) => (
                     <SelectItem key={profile.id} value={profile.id}>
