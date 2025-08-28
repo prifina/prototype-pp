@@ -6,12 +6,16 @@ export const testWhatsAppPipeline = async () => {
   try {
     // Test 1: Simple function test
     console.log('1. Testing simple function...');
-    const { data: simpleTest, error: simpleError } = await supabase.functions.invoke('simple-test');
+    const { data: simpleTest, error: simpleError } = await supabase.functions.invoke('simple-test', {
+      body: {}
+    });
     console.log('Simple test result:', { data: simpleTest, error: simpleError });
     
     // Test 2: Test webhook directly
     console.log('2. Testing webhook direct...');
-    const { data: webhookTest, error: webhookError } = await supabase.functions.invoke('test-webhook-direct');
+    const { data: webhookTest, error: webhookError } = await supabase.functions.invoke('test-webhook-direct', {
+      body: {}
+    });
     console.log('Webhook test result:', { data: webhookTest, error: webhookError });
     
     // Test 3: Test AI twin chat

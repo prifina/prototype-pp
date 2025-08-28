@@ -38,6 +38,8 @@ serve(async (req) => {
         'X-Twilio-Signature': 'test-signature-skip-validation',
         'User-Agent': 'TwilioProxy/1.1',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY') || ''
       },
       body: formData
     });
@@ -55,6 +57,8 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY') || ''
       },
       body: JSON.stringify({
         seat_id: 'd6b53a9e-b4f9-46de-b0c3-663aa083f228', // Your seat ID
@@ -87,6 +91,8 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY') || ''
       },
       body: JSON.stringify({
         to: 'whatsapp:+16468014054',
