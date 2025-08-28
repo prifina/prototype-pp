@@ -151,58 +151,34 @@ serve(async (req) => {
       });
     }
 
-    // Try core API health check first
-    const healthResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/core-api`, {
+    // Try middleware API which handles the AI chat properly
+    const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/middleware-api`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'health-check' })
-    });
-
-    if (!healthResponse.ok) {
-      console.error('Core API health check failed:', healthResponse.status);
-      const fallbackResponse = needsDisclaimer 
-        ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
-        : "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
-        
-      return new Response(JSON.stringify({ 
-        response: fallbackResponse,
-        disclaimer_added: needsDisclaimer,
-        error: 'Core API unavailable'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Build proper payload for core API
-    const aiPayload = {
-      stream: false, // Disable streaming for now to simplify
-      statement: `${systemContext}\n\nUser message: ${message}`,
-      knowledgebaseId: 'production-physio',
-      userId: user_context.phone_e164 || 'anonymous',
-      sessionId: `seat_${seat_id}`,
-      scoreLimit: 0.3,
-      debug: true,
-      userLanguage: 'English'
-    };
-
-    const middlewareResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/core-api`, {
-      method: 'POST', 
       headers: {
         'Content-Type': 'application/json',
         'Authorization': req.headers.get('authorization') || ''
       },
-      body: JSON.stringify(aiPayload)
+      body: JSON.stringify({
+        stream: false,
+        statement: `${systemContext}\n\nUser message: ${message}`,
+        knowledgebaseId: 'production-physio',
+        userId: user_context.phone_e164 || 'anonymous',
+        sessionId: `seat_${seat_id}`,
+        scoreLimit: 0.3,
+        debug: true,
+        userLanguage: 'English'
+      })
     });
 
     if (!middlewareResponse.ok) {
       const errorText = await middlewareResponse.text();
-      console.error(`Core API error ${middlewareResponse.status}:`, errorText);
-      throw new Error(`Core API error: ${middlewareResponse.status}`);
+      console.error(`Middleware API error ${middlewareResponse.status}:`, errorText);
+      throw new Error(`Middleware API error: ${middlewareResponse.status}`);
     }
 
-    // Process response from core API
+    // Process response from middleware API
     const responseData = await middlewareResponse.json();
-    console.log('Core API response:', responseData);
+    console.log('Middleware API response:', responseData);
     
     let aiResponse = '';
     
@@ -225,7 +201,7 @@ serve(async (req) => {
     
     // Fallback if no response received
     if (!aiResponse) {
-      console.error('No AI response received from core API:', responseData);
+      console.error('No AI response received from middleware API:', responseData);
       aiResponse = 'Sorry, I had trouble processing your message. Please try again.';
     }
 

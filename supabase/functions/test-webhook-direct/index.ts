@@ -15,7 +15,8 @@ serve(async (req) => {
     
     // Test 1: Check if webhook URL is accessible
     console.log("Testing webhook URL accessibility...");
-    const webhookUrl = `${req.url.split('/functions')[0]}/functions/v1/twilio-webhook`;
+    const baseUrl = req.url.split('/functions')[0];
+    const webhookUrl = `${baseUrl}/functions/v1/twilio-webhook`;
     console.log("Webhook URL:", webhookUrl);
     
     // Test 2: Simulate Twilio webhook call exactly as Twilio would send it
@@ -53,7 +54,7 @@ serve(async (req) => {
     // Test 3: Check AI twin directly
     console.log("Testing AI twin chat directly...");
     
-    const aiResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/ai-twin-chat`, {
+    const aiResponse = await fetch(`${baseUrl}/functions/v1/ai-twin-chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -87,7 +88,7 @@ serve(async (req) => {
     // Test 4: Check WhatsApp send
     console.log("Testing WhatsApp send...");
     
-    const whatsappResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
+    const whatsappResponse = await fetch(`${baseUrl}/functions/v1/whatsapp-send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
