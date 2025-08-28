@@ -8,6 +8,7 @@ interface AuthState {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  roleLoading: boolean;
 }
 
 export const useAuth = () => {
@@ -16,6 +17,7 @@ export const useAuth = () => {
     session: null,
     loading: true,
     isAdmin: false,
+    roleLoading: false,
   });
   const { toast } = useToast();
 
@@ -49,6 +51,8 @@ export const useAuth = () => {
           user,
           session,
           loading: false,
+          roleLoading: Boolean(user), // Start role loading if user exists
+          isAdmin: false, // Reset admin status
         }));
         
         // Then defer role checking to prevent deadlock
@@ -58,14 +62,16 @@ export const useAuth = () => {
               setAuthState(prev => ({
                 ...prev,
                 isAdmin: Boolean(isAdmin),
+                roleLoading: false, // Role check complete
               }));
             });
           }, 0);
         } else {
-          // No user, clear admin status
+          // No user, clear admin status and stop role loading
           setAuthState(prev => ({
             ...prev,
             isAdmin: false,
+            roleLoading: false,
           }));
         }
       }
@@ -81,6 +87,8 @@ export const useAuth = () => {
         user,
         session,
         loading: false,
+        roleLoading: Boolean(user), // Start role loading if user exists
+        isAdmin: false, // Reset admin status
       }));
       
       // Then check role if user exists
@@ -90,6 +98,7 @@ export const useAuth = () => {
             setAuthState(prev => ({
               ...prev,
               isAdmin: Boolean(isAdmin),
+              roleLoading: false, // Role check complete
             }));
           });
         }, 0);
