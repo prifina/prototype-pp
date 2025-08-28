@@ -7,25 +7,28 @@ export const showApi = {
    */
   async verifyPasscode(passcode: string): Promise<{ id: string; show_name: string; production_house_name: string }> {
     try {
-      // For demo purposes, accept DEMO123 passcode
-      if (passcode === 'DEMO123') {
-        return { 
-          id: 'demo-show-id', 
-          show_name: 'Demo Show',
-          production_house_name: 'Demo Production House'
-        };
-      }
-      
-      // TODO: When Supabase tables are ready, uncomment this:
-      // const hashedPasscode = await hashPasscode(passcode);
-      // const { data, error } = await (supabase as any)
-      //   .from('shows')
-      //   .select('id, show_name, production_house_name')
-      //   .eq('passcode_hash', hashedPasscode)
-      //   .eq('status', 'active')
-      //   .single();
+      const hashedPasscode = await hashPasscode(passcode);
+      const { data, error } = await supabase
+        .from('shows')
+        .select('id, name, production_house')
+        .eq('passcode', hashedPasscode)
+        .eq('status', 'active')
+        .maybeSingle();
 
-      throw new Error('Invalid passcode');
+      if (error) {
+        console.error('Database error:', error);
+        throw new Error('Invalid passcode');
+      }
+
+      if (!data) {
+        throw new Error('Invalid passcode');
+      }
+
+      return { 
+        id: data.id, 
+        show_name: data.name,
+        production_house_name: data.production_house || ''
+      };
     } catch (error) {
       console.error('Passcode verification failed:', error);
       throw new Error('Invalid passcode');
@@ -36,58 +39,118 @@ export const showApi = {
    * Get show details by ID
    */
   async getShow(showId: string): Promise<Show> {
-    // Mock implementation until Supabase tables are ready
-    if (showId === 'demo-show-id') {
-      return {
-        id: 'demo-show-id',
-        show_name: 'Demo Show',
-        production_house_name: 'Demo Production House',
-        default_seat_duration_days: 180,
-        status: 'active',
-        passcode_hash: await hashPasscode('DEMO123'),
-        seat_limit: 50,
-        start_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-    }
+    try {
+      const { data, error } = await supabase
+        .from('shows')
+        .select('*')
+        .eq('id', showId)
+        .maybeSingle();
 
-    throw new Error('Show not found');
+      if (error) {
+        console.error('Database error:', error);
+        throw new Error('Show not found');
+      }
+
+      if (!data) {
+        throw new Error('Show not found');
+      }
+
+      return {
+        id: data.id,
+        show_name: data.name,
+        production_house_name: data.production_house || '',
+        default_seat_duration_days: data.duration_days || 30,
+        status: data.status as 'active' | 'archived',
+        passcode_hash: data.passcode,
+        seat_limit: data.seat_limit || 100,
+        start_at: data.created_at,
+        end_at: null,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+    } catch (error) {
+      console.error('Failed to get show:', error);
+      throw new Error('Show not found');
+    }
   },
 
   /**
    * List all active shows for admin
    */
   async listShows(): Promise<Show[]> {
-    // Mock implementation until Supabase tables are ready
-    return [
-      {
-        id: 'demo-show-id',
-        show_name: 'Demo Show',
-        production_house_name: 'Demo Production House',
-        default_seat_duration_days: 180,
-        status: 'active',
-        passcode_hash: await hashPasscode('DEMO123'),
-        seat_limit: 50,
-        start_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+    try {
+      const { data, error } = await supabase
+        .from('shows')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Database error:', error);
+        throw new Error('Failed to load shows');
       }
-    ];
+
+      return (data || []).map(show => ({
+        id: show.id,
+        show_name: show.name,
+        production_house_name: show.production_house || '',
+        default_seat_duration_days: show.duration_days || 30,
+        status: show.status as 'active' | 'archived',
+        passcode_hash: show.passcode,
+        seat_limit: show.seat_limit || 100,
+        start_at: show.created_at,
+        end_at: null,
+        created_at: show.created_at,
+        updated_at: show.updated_at
+      }));
+    } catch (error) {
+      console.error('Failed to list shows:', error);
+      throw new Error('Failed to load shows');
+    }
   },
 
   /**
    * Create a new show
    */
   async createShow(showData: Omit<Show, 'id' | 'created_at' | 'updated_at'>): Promise<Show> {
-    // Mock implementation until Supabase tables are ready
-    const now = new Date().toISOString();
-    return {
-      id: `show-${Date.now()}`,
-      created_at: now,
-      updated_at: now,
-      ...showData
-    };
+    try {
+      const { data, error } = await supabase
+        .from('shows')
+        .insert([{
+          name: showData.show_name,
+          production_house: showData.production_house_name,
+          passcode: showData.passcode_hash,
+          seat_limit: showData.seat_limit,
+          duration_days: showData.default_seat_duration_days,
+          status: 'active',
+          contact_email: '',
+          contact_phone: ''
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Database error:', error);
+        throw new Error('Failed to create show');
+      }
+
+      return {
+        id: data.id,
+        show_name: data.name,
+        production_house_name: data.production_house || '',
+        default_seat_duration_days: data.duration_days || 30,
+        status: data.status as 'active' | 'archived',
+        passcode_hash: data.passcode,
+        seat_limit: data.seat_limit || 100,
+        start_at: data.created_at,
+        end_at: null,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+    } catch (error) {
+      console.error('Failed to create show:', error);
+      throw new Error('Failed to create show');
+    }
   }
 };
 
