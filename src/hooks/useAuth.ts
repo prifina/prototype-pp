@@ -21,6 +21,7 @@ export const useAuth = () => {
 
   const checkUserRole = useCallback(async (userId: string) => {
     try {
+      console.log('Checking role for user:', userId);
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -28,8 +29,10 @@ export const useAuth = () => {
         .eq('role', 'admin')
         .single();
       
+      console.log('Role check result:', { data, error });
       return !error && data;
-    } catch {
+    } catch (err) {
+      console.log('Role check error:', err);
       return false;
     }
   }, []);

@@ -117,6 +117,14 @@ export const Onboarding = () => {
               <div className={`w-3 h-3 rounded-full ${['consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
               <div className={`w-3 h-3 rounded-full ${currentStep === 'confirmation' ? 'bg-primary' : 'bg-muted'}`} />
             </div>
+            <div className="mt-4">
+              <button 
+                onClick={() => navigate('/admin')}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Admin Access
+              </button>
+            </div>
           </div>
           
           {renderCurrentStep()}
