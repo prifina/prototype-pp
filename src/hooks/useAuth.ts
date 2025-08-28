@@ -35,32 +35,62 @@ export const useAuth = () => {
   }, []);
 
   useEffect(() => {
-    // Set up auth state listener
+    // Set up auth state listener - MUST be synchronous to prevent deadlocks
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         const user = session?.user ?? null;
-        const isAdmin = user ? await checkUserRole(user.id) : false;
         
-        setAuthState({
+        // First, update auth state synchronously
+        setAuthState(prev => ({
+          ...prev,
           user,
           session,
           loading: false,
-          isAdmin: Boolean(isAdmin),
-        });
+        }));
+        
+        // Then defer role checking to prevent deadlock
+        if (user) {
+          setTimeout(() => {
+            checkUserRole(user.id).then(isAdmin => {
+              setAuthState(prev => ({
+                ...prev,
+                isAdmin: Boolean(isAdmin),
+              }));
+            });
+          }, 0);
+        } else {
+          // No user, clear admin status
+          setAuthState(prev => ({
+            ...prev,
+            isAdmin: false,
+          }));
+        }
       }
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       const user = session?.user ?? null;
-      const isAdmin = user ? await checkUserRole(user.id) : false;
       
-      setAuthState({
+      // Update auth state first
+      setAuthState(prev => ({
+        ...prev,
         user,
         session,
         loading: false,
-        isAdmin: Boolean(isAdmin),
-      });
+      }));
+      
+      // Then check role if user exists
+      if (user) {
+        setTimeout(() => {
+          checkUserRole(user.id).then(isAdmin => {
+            setAuthState(prev => ({
+              ...prev,
+              isAdmin: Boolean(isAdmin),
+            }));
+          });
+        }, 0);
+      }
     });
 
     return () => subscription.unsubscribe();
