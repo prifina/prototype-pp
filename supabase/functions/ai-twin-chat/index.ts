@@ -83,14 +83,18 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== AI TWIN CHAT FUNCTION START ===');
+    
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
     const { seat_id, message, channel, user_context } = await req.json();
+    console.log('Request parsed successfully:', { seat_id, message, channel });
 
     if (!seat_id || !message) {
+      console.log('Missing required fields');
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -126,22 +130,27 @@ serve(async (req) => {
     }
 
     // Check if daily disclaimer is needed
+    console.log('Checking disclaimer requirement...');
     const needsDisclaimer = await needsDailyDisclaimer(supabase, seat_id);
+    console.log('Needs disclaimer:', needsDisclaimer);
     
     // Build AI context
     const systemContext = buildAIContext(user_context, channel);
+    console.log('System context built');
     
     // Call the core API directly since middleware API seems to have configuration issues
     const CORE_API_URL = Deno.env.get('CORE_API_URL');
     const CORE_API_KEY = Deno.env.get('CORE_API_KEY');
     
     // Debug environment variables
+    console.log('=== ENVIRONMENT VARIABLES CHECK ===');
     console.log('CORE_API_URL available:', !!CORE_API_URL);
     console.log('CORE_API_KEY available:', !!CORE_API_KEY);
     console.log('MIDDLEWARE_API_URL available:', !!Deno.env.get('MIDDLEWARE_API_URL'));
+    console.log('CORE_API_URL value:', CORE_API_URL ? CORE_API_URL.substring(0, 50) + '...' : 'NOT SET');
     
     if (!CORE_API_URL || !CORE_API_KEY) {
-      console.error('Missing core API configuration');
+      console.error('Missing core API configuration - returning fallback');
       // Fallback response
       const fallbackResponse = needsDisclaimer 
         ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
