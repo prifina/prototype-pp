@@ -18,7 +18,17 @@ const corsHeaders = {
 // Twilio API configuration
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
 const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM') || 'whatsapp:+14155238886';
+const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM');
+
+// Debug logging for Twilio configuration
+console.log('=== TWILIO CONFIG DEBUG ===');
+console.log('TWILIO_ACCOUNT_SID:', TWILIO_ACCOUNT_SID ? 'SET' : 'MISSING');
+console.log('TWILIO_AUTH_TOKEN:', TWILIO_AUTH_TOKEN ? 'SET' : 'MISSING'); 
+console.log('TWILIO_WHATSAPP_FROM:', TWILIO_WHATSAPP_FROM || 'MISSING - USING FALLBACK');
+
+if (!TWILIO_WHATSAPP_FROM) {
+  console.error('CRITICAL: TWILIO_WHATSAPP_FROM not set! This will cause "Channel not found" errors.');
+}
 
 /**
  * Send message via Twilio API with enhanced error handling

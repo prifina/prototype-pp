@@ -35,12 +35,16 @@ serve(async (req) => {
 
     console.log(
       "Environment check - MIDDLEWARE_API_URL:",
-      middlewareApiUrl ? "Set" : "Missing"
+      middlewareApiUrl ? `Set (${middlewareApiUrl.substring(0, 50)}...)` : "Missing"
     );
     console.log(
       "Environment check - CORE_API_KEY:",
       coreApiKey ? "Set" : "Missing"
     );
+    
+    // Debug: Log actual values for troubleshooting
+    console.log("Full MIDDLEWARE_API_URL:", middlewareApiUrl);
+    console.log("CORE_API_KEY present:", !!coreApiKey);
 
     if (!middlewareApiUrl || !coreApiKey) {
       console.error("Missing API configuration");
