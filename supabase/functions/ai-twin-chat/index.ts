@@ -11,6 +11,21 @@ const corsHeaders = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 };
 
+// Production configuration
+const LOG_LEVEL = Deno.env.get("LOG_LEVEL") || "info";
+const IS_DEBUG = LOG_LEVEL === "debug";
+const MAX_CONTEXT_LENGTH = 2500; // Characters
+const MAX_MESSAGE_LENGTH = 1000; // Characters
+const AI_GENERATION_TIMEOUT = 30000; // 30 seconds
+
+// Request validation interface
+interface ChatRequest {
+  seat_id: string;
+  message: string;
+  channel?: string;
+  user_context?: any;
+}
+
 // Red flag keywords that trigger immediate escalation
 const RED_FLAG_KEYWORDS = [
   'concussion', 'head injury', 'severe pain', 'can\'t move', 'chest pain',
@@ -43,24 +58,26 @@ function hasRedFlags(message: string): boolean {
   return RED_FLAG_KEYWORDS.some(keyword => lowerMessage.includes(keyword));
 }
 
-// Build context for AI Twin
+// Build context for AI Twin with size limits and normalization
 function buildAIContext(userContext: any, channel: string): string {
   const context = [
-    `User: ${userContext.name} (${userContext.role})`,
-    `Show: ${userContext.show_name}`,
+    `User: ${userContext.name || 'Unknown'} (${userContext.role || 'performer'})`,
+    `Show: ${userContext.show_name || 'N/A'}`,
     `Type: ${userContext.tour_or_resident === 'tour' ? 'Touring performer' : 'Resident performer'}`,
     `Channel: ${channel}`,
   ];
   
+  // Goals with length limit
   if (userContext.goals) {
-    // Properly serialize goals object - fix typo: remove duplicate "goals:" prefix
     const goalsText = typeof userContext.goals === 'object' 
       ? JSON.stringify(userContext.goals).replace(/[{}]/g, '').replace(/"/g, '').replace(/^goals:/, '')
       : userContext.goals.toString().replace(/^goals:/, '');
-    context.push(`Goals: ${goalsText.trim()}`);
+    const trimmedGoals = goalsText.trim().substring(0, 200);
+    if (trimmedGoals) context.push(`Goals: ${trimmedGoals}`);
   }
   
-  if (userContext.sleep_env) {
+  // Sleep environment with validation
+  if (userContext.sleep_env && typeof userContext.sleep_env === 'object') {
     const sleep = userContext.sleep_env;
     const sleepParts = [`${sleep.environment || 'unknown'} environment`];
     if (sleep.noise_level) sleepParts.push(`${sleep.noise_level} noise`);
@@ -68,20 +85,77 @@ function buildAIContext(userContext: any, channel: string): string {
     context.push(`Sleep: ${sleepParts.join(', ')}`);
   }
   
-  if (userContext.food_constraints) {
+  // Food constraints with array validation
+  if (userContext.food_constraints && typeof userContext.food_constraints === 'object') {
     const food = userContext.food_constraints;
     const constraints = [];
-    if (food.allergies?.length) constraints.push(`allergies: ${food.allergies.join(', ')}`);
-    if (food.intolerances?.length) constraints.push(`intolerances: ${food.intolerances.join(', ')}`);
-    if (food.dietary_preferences?.length) constraints.push(`preferences: ${food.dietary_preferences.join(', ')}`);
+    if (Array.isArray(food.allergies) && food.allergies.length) {
+      constraints.push(`allergies: ${food.allergies.slice(0, 5).join(', ')}`);
+    }
+    if (Array.isArray(food.intolerances) && food.intolerances.length) {
+      constraints.push(`intolerances: ${food.intolerances.slice(0, 5).join(', ')}`);
+    }
+    if (Array.isArray(food.dietary_preferences) && food.dietary_preferences.length) {
+      constraints.push(`preferences: ${food.dietary_preferences.slice(0, 5).join(', ')}`);
+    }
     if (constraints.length) context.push(`Food: ${constraints.join('; ')}`);
   }
   
-  if (userContext.injuries_notes) {
-    context.push(`Past injuries: ${userContext.injuries_notes}`);
+  // Injuries with length limit
+  if (userContext.injuries_notes && typeof userContext.injuries_notes === 'string') {
+    const injuries = userContext.injuries_notes.substring(0, 300).trim();
+    if (injuries) context.push(`Past injuries: ${injuries}`);
   }
   
-  return context.join('\n');
+  // Join and normalize whitespace
+  let contextString = context.join('\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim();
+  
+  // Apply hard cap and truncate gracefully
+  if (contextString.length > MAX_CONTEXT_LENGTH) {
+    contextString = contextString.substring(0, MAX_CONTEXT_LENGTH - 20) + '... [truncated]';
+  }
+  
+  return contextString;
+}
+
+// Validate and sanitize chat request
+function validateChatRequest(data: any): { valid: boolean; errors: string[]; sanitized?: ChatRequest } {
+  const errors: string[] = [];
+  
+  if (!data.seat_id || typeof data.seat_id !== 'string') {
+    errors.push('seat_id is required and must be a string');
+  }
+  
+  if (!data.message || typeof data.message !== 'string') {
+    errors.push('message is required and must be a string');
+  } else if (data.message.trim().length === 0) {
+    errors.push('message cannot be empty');
+  } else if (data.message.length > MAX_MESSAGE_LENGTH) {
+    errors.push(`message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+  }
+  
+  if (data.channel && typeof data.channel !== 'string') {
+    errors.push('channel must be a string');
+  }
+  
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+  
+  return {
+    valid: true,
+    errors: [],
+    sanitized: {
+      seat_id: data.seat_id.trim(),
+      message: data.message.trim(),
+      channel: data.channel?.trim() || 'whatsapp',
+      user_context: data.user_context || {}
+    }
+  };
 }
 
 serve(async (req) => {
@@ -90,25 +164,33 @@ serve(async (req) => {
   }
 
   try {
-    console.log('=== AI TWIN CHAT FUNCTION START ===');
+    const requestId = crypto.randomUUID();
+    console.log(`=== AI TWIN CHAT START [${requestId}] ===`);
     
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { seat_id, message, channel, user_context } = await req.json();
-    console.log('Request parsed successfully:', { seat_id, message, channel });
-
-    if (!seat_id || !message) {
-      console.log('Missing required fields');
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+    // Validate and sanitize request
+    const requestData = await req.json();
+    const validation = validateChatRequest(requestData);
+    
+    if (!validation.valid) {
+      console.log(`Validation failed [${requestId}]:`, validation.errors);
+      return new Response(JSON.stringify({ 
+        error: 'Invalid request', 
+        details: validation.errors,
+        requestId 
+      }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId }
       });
     }
 
-    console.log(`Processing AI chat for seat ${seat_id}:`, message);
+    const { seat_id, message, channel, user_context } = validation.sanitized!;
+    console.log(`Processing AI chat [${requestId}] for seat ${seat_id}:`, 
+      IS_DEBUG ? message : `[${message.length} chars]`);
 
     // Check for red flags first
     if (hasRedFlags(message)) {
@@ -225,7 +307,9 @@ serve(async (req) => {
           content: message // Clean user message only - no "User message:" prefix
         }
       ],
-      // Removed stream parameter for now
+      // Add conservative generation parameters
+      temperature: 0.3,
+      max_tokens: 512,
       metadata: {
         appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID || "speak-to",
         networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID || "x_prifina",
@@ -243,22 +327,39 @@ serve(async (req) => {
       throw new Error("Cannot send both system message and metadata.userContext - use single source of context");
     }
 
-    console.log('Calling middleware API with proper payload...');
-    console.log('Payload keys:', Object.keys(payload));
+    console.log(`Calling middleware API [${requestId}] with payload structure:`, {
+      userId: !!payload.userId,
+      knowledgebaseId: !!payload.knowledgebaseId,
+      messageCount: payload.messages.length,
+      systemContextLength: payload.messages[0]?.content?.length || 0,
+      userMessageLength: payload.messages[1]?.content?.length || 0,
+      hasMetadata: !!payload.metadata
+    });
 
-    // Try documented chat endpoint pattern (will discover correct one via logs)
-    const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
+    // Add timeout wrapper for AI generation
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('AI generation timeout')), AI_GENERATION_TIMEOUT);
+    });
+
+    const apiPromise = supabase.functions.invoke('middleware-api', {
       body: {
-        endpoint: "v1/generate", // trying documented pattern instead of v2/generate
+        endpoint: "v1/generate",
         method: "POST", 
         body: payload
       }
     });
 
+    const { data: middlewareData, error: middlewareError } = await Promise.race([
+      apiPromise,
+      timeoutPromise
+    ]) as any;
+
     if (middlewareError) {
-      console.error('Middleware API error:', middlewareError);
-      console.error('Full error details:', JSON.stringify(middlewareError, null, 2));
-      throw new Error(`Middleware API error: ${middlewareError.message || JSON.stringify(middlewareError)}`);
+      console.error(`Middleware API error [${requestId}]:`, middlewareError.message);
+      if (IS_DEBUG) {
+        console.error(`Full error details [${requestId}]:`, JSON.stringify(middlewareError, null, 2));
+      }
+      throw new Error(`Middleware API error: ${middlewareError.message || 'Unknown error'}`);
     }
 
     console.log('Middleware API response received');
@@ -324,19 +425,40 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       response: finalResponse,
-      disclaimer_added: needsDisclaimer 
+      disclaimer_added: needsDisclaimer,
+      requestId 
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'x-request-id': requestId
+      }
     });
 
   } catch (error) {
-    console.error('Error processing AI twin chat:', error);
+    const errorId = crypto.randomUUID();
+    console.error(`Error processing AI twin chat [${errorId}]:`, error.message);
+    if (IS_DEBUG) {
+      console.error(`Full error stack [${errorId}]:`, error);
+    }
+    
+    // Provide helpful fallback response
+    const fallbackResponse = needsDisclaimer 
+      ? `${DAILY_DISCLAIMER}\n\nI'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`
+      : `I'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`;
+    
     return new Response(JSON.stringify({ 
       error: 'Failed to process chat',
-      details: error.message 
+      details: IS_DEBUG ? error.message : 'Internal error - contact support',
+      errorId,
+      fallback_response: fallbackResponse
     }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'x-error-id': errorId
+      }
     });
   }
 });

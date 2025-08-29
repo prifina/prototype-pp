@@ -6,6 +6,98 @@ const cors = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 
+// Production logging configuration
+const LOG_LEVEL = Deno.env.get("LOG_LEVEL") || "info";
+const IS_DEBUG = LOG_LEVEL === "debug";
+
+// Request validation schema
+interface MiddlewareRequest {
+  endpoint?: string;
+  method?: string;
+  body?: any;
+  headers?: Record<string, string>;
+}
+
+// Safe logging utilities
+function redactSensitiveData(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  const redacted = { ...obj };
+  
+  // Redact sensitive fields
+  if (redacted.messages) {
+    redacted.messages = redacted.messages.map((msg: any) => ({
+      role: msg.role,
+      contentLength: msg.content?.length || 0,
+      contentPreview: IS_DEBUG ? msg.content?.substring(0, 100) + '...' : '[REDACTED]'
+    }));
+  }
+  
+  if (redacted.body?.messages) {
+    redacted.body.messages = redacted.body.messages.map((msg: any) => ({
+      role: msg.role,
+      contentLength: msg.content?.length || 0,
+      contentPreview: IS_DEBUG ? msg.content?.substring(0, 100) + '...' : '[REDACTED]'
+    }));
+  }
+  
+  return redacted;
+}
+
+// Retry logic with exponential backoff
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2): Promise<Response> {
+  let attempt = 0;
+  
+  while (attempt <= maxRetries) {
+    try {
+      const response = await fetch(url, options);
+      
+      // Success or client error (don't retry)
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+        return response;
+      }
+      
+      // Handle rate limiting with backoff
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const backoffMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+        
+        if (attempt < maxRetries) {
+          console.log(`Rate limited, retrying after ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          attempt++;
+          continue;
+        }
+      }
+      
+      // Server error - retry with jittered backoff
+      if (response.status >= 500 && attempt < maxRetries) {
+        const jitter = Math.random() * 1000;
+        const backoffMs = Math.pow(2, attempt) * 1000 + jitter;
+        
+        console.log(`Server error ${response.status}, retrying after ${backoffMs.toFixed(0)}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        attempt++;
+        continue;
+      }
+      
+      return response;
+      
+    } catch (error) {
+      if (attempt < maxRetries && (error instanceof TypeError || error.name === 'TimeoutError')) {
+        const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+        console.log(`Network error, retrying after ${backoffMs.toFixed(0)}ms (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        attempt++;
+        continue;
+      }
+      throw error;
+    }
+  }
+  
+  throw new Error(`Max retries (${maxRetries}) exceeded`);
+}
+
 function joinUrl(base: string, endpoint: string) {
   const b = base.endsWith("/") ? base : base + "/";
   const e = (endpoint || "").replace(/^\/+/, ""); // strip leading slashes defensively
@@ -16,8 +108,25 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    const { endpoint = "", method = "POST", body, headers = {} } = await req.json().catch(() => ({}));
+    const requestData: MiddlewareRequest = await req.json().catch(() => ({}));
+    const { endpoint = "", method = "POST", body, headers = {} } = requestData;
+    
+    // Validate request
+    if (!endpoint && method !== "GET") {
+      return new Response(JSON.stringify({ error: "endpoint is required for non-GET requests" }), {
+        status: 400,
+        headers: cors
+      });
+    }
+    
     const base = Deno.env.get("MIDDLEWARE_API_URL") ?? "";
+    if (!base) {
+      return new Response(JSON.stringify({ error: "MIDDLEWARE_API_URL not configured" }), {
+        status: 500,
+        headers: cors
+      });
+    }
+    
     const url = joinUrl(base, endpoint);
 
     // Add the headers your middleware expects, even if caller forgot to pass them
@@ -42,40 +151,45 @@ serve(async (req) => {
     const opts: RequestInit = { 
       method, 
       headers: mergedHeaders,
-      // Add timeout to prevent hanging on cold starts
-      signal: AbortSignal.timeout(30000) // 30 second timeout
+      // Increase timeout for AI processing
+      signal: AbortSignal.timeout(45000) // 45 second timeout
     };
     if (method.toUpperCase() !== "GET" && body !== undefined) {
       opts.body = JSON.stringify(body);
     }
 
-    // Helpful logs in Supabase function logs - including full body for discovery
-    console.log(JSON.stringify({ 
+    // Secure logging - redact sensitive data in production
+    const logData = {
       requestId,
-      url, 
-      method, 
-      hasBody: !!opts.body, 
-      headers: mergedHeaders, 
-      body: opts.body ? JSON.parse(opts.body) : undefined 
-    }, null, 2));
+      url: url.replace(/\/\/[^/]+/, '//[REDACTED]'), // Hide domain in logs
+      method,
+      hasBody: !!opts.body,
+      headers: { ...mergedHeaders, "x-prifina-app-id": "[REDACTED]" },
+      bodyStructure: body ? Object.keys(body) : undefined,
+      ...(IS_DEBUG ? { body: redactSensitiveData(body) } : {})
+    };
+    
+    console.log(JSON.stringify(logData, null, 2));
 
-    const upstream = await fetch(url, opts);
+    const upstream = await fetchWithRetry(url, opts);
     const text = await upstream.text();
     
     // Enhanced observability - log upstream response details
     const respHeaders = Object.fromEntries(upstream.headers.entries());
-    const bodyPreview = text.slice(0, 4000); // Safe preview, avoid logging PII
+    const safeBodyPreview = IS_DEBUG ? text.slice(0, 1000) : text.slice(0, 200);
     
-    console.log(JSON.stringify({
+    const responseLog = {
       requestId,
-      url,
       method,
       status: upstream.status,
       statusText: upstream.statusText,
-      respHeaders,
-      bodyPreview,
+      respHeaders: IS_DEBUG ? respHeaders : { "content-type": respHeaders["content-type"] },
+      bodyPreview: safeBodyPreview,
+      bodyLength: text.length,
       timestamp: new Date().toISOString()
-    }, null, 2));
+    };
+    
+    console.log(JSON.stringify(responseLog, null, 2));
 
     // Return upstream response with proper content-type and request ID
     const responseHeaders = {
@@ -89,7 +203,17 @@ serve(async (req) => {
       headers: responseHeaders 
     });
   } catch (e) {
-    console.error("middleware-api error:", e);
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: cors });
+    const errorId = crypto.randomUUID();
+    console.error(`middleware-api error [${errorId}]:`, e.message);
+    console.error(`Full error details [${errorId}]:`, e);
+    
+    return new Response(JSON.stringify({ 
+      error: "Internal proxy error",
+      errorId,
+      details: IS_DEBUG ? e.message : "Contact support with error ID"
+    }), { 
+      status: 500, 
+      headers: { ...cors, "x-error-id": errorId }
+    });
   }
 });
