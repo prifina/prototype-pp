@@ -52,8 +52,16 @@ serve(async (req) => {
       hasBody: !!body,
       headers: mergedHeaders,
       middlewareApiUrl,
-      endpoint
+      endpoint,
+      bodyPreview: body ? JSON.stringify(body).substring(0, 200) + "..." : "none"
     }, null, 2));
+
+    // Additional debug logging
+    console.log("MIDDLEWARE_API_URL value:", middlewareApiUrl);
+    console.log("Constructed URL:", requestUrl);
+    console.log("Request method:", method);
+    console.log("Headers being sent:", JSON.stringify(mergedHeaders, null, 2));
+    console.log("Body being sent:", JSON.stringify(body, null, 2));
 
     // Check for debug echo mode
     if ((headers.debug as string) === "echo") {
@@ -88,22 +96,38 @@ serve(async (req) => {
     const response = await fetch(requestUrl, opts);
 
     console.log("Response status:", response.status);
+    console.log("Response headers:", Object.fromEntries(response.headers.entries()));
+    console.log("Response ok:", response.ok);
 
     if (!response.ok) {
       let errorData;
+      let errorText = '';
       try {
-        errorData = await response.json();
-        console.log("Error response data:", JSON.stringify(errorData));
+        errorText = await response.text();
+        console.log("Raw error response text:", errorText);
+        
+        // Try to parse as JSON
+        try {
+          errorData = JSON.parse(errorText);
+          console.log("Parsed error response:", JSON.stringify(errorData, null, 2));
+        } catch (parseError) {
+          console.log("Error response is not JSON, using raw text");
+          errorData = { message: errorText };
+        }
       } catch (e) {
-        console.log("Failed to parse error response as JSON");
-        errorData = { message: "Unknown error" };
+        console.log("Failed to read error response:", e);
+        errorData = { message: "Failed to read error response" };
       }
 
+      console.log("Returning error response with status:", response.status);
       return new Response(
         JSON.stringify({
           error: errorData.message || "API request failed",
           status: response.status,
           details: errorData,
+          rawResponse: errorText,
+          requestUrl: requestUrl,
+          requestHeaders: mergedHeaders
         }),
         {
           status: response.status,
