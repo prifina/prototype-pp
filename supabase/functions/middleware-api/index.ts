@@ -39,8 +39,8 @@ serve(async (req) => {
       opts.body = JSON.stringify(body);
     }
 
-    // Helpful logs in Supabase function logs
-    console.log(JSON.stringify({ url, method, hasBody: !!opts.body, headers: mergedHeaders }, null, 2));
+    // Helpful logs in Supabase function logs - including full body for discovery
+    console.log(JSON.stringify({ url, method, hasBody: !!opts.body, headers: mergedHeaders, body: opts.body ? JSON.parse(opts.body) : undefined }, null, 2));
 
     const upstream = await fetch(url, opts);
     const text = await upstream.text();

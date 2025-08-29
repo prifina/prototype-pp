@@ -193,42 +193,34 @@ serve(async (req) => {
     // Generate unique request ID
     const requestId = crypto.randomUUID();
 
-    const payload = {
-      stream: true,
-      statement: `${systemContext}\n\nUser message: ${message}`,
-      knowledgebaseId: 'production-physio',
-      scoreLimit: 0.3,
-      userId: user_context.phone_e164 || 'anonymous',
-      requestId: requestId,
-      debug: true,
-      userLanguage: 'English',
-      msgIdx: 0,
-      sessionId: `seat_${seat_id}`,
-      networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID,
-      appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
-      localize: {
-        locale: 'en-US',
-        timeZone: 'America/New_York',
-        offset: offsetMinutes,
-        currentTime: now.toISOString(),
-        dst,
-        gmtOffset,
-      }
-    };
+      // Use proper documented API contract with UUID knowledgebase ID
+      const payload = {
+        userId: "production-physio", // twin handle/owner identifier
+        knowledgebaseId: "4669e569-2fbb-4ea8-a4db-7820d76f60c8", // proper UUID format
+        messages: [
+          {
+            role: "user", 
+            content: `${systemContext}\n\nUser message: ${message}`
+          }
+        ],
+        stream: false,
+        metadata: {
+          appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID || "speak-to",
+          networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID || "x_prifina",
+          channel: channel || "whatsapp",
+          sessionId: `seat_${seat_id}`,
+          userContext: systemContext
+        }
+      };
 
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
 
-    // Call middleware-api with proper contract (no leading slash!)
+    // Try documented chat endpoint pattern (will discover correct one via logs)
     const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
       body: {
-        endpoint: "v2/generate", // ✅ no leading slash
-        method: "POST",
-        headers: {
-          "x-prifina-app-id": envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
-          "x-prifina-network-id": envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID,
-          "x-region": "us-east-1"
-        },
+        endpoint: "v1/generate", // trying documented pattern instead of v2/generate
+        method: "POST", 
         body: payload
       }
     });
