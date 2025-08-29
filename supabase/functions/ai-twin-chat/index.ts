@@ -114,18 +114,13 @@ serve(async (req) => {
     if (hasRedFlags(message)) {
       console.log('Red flag detected, sending escalation template');
       
-      // Send red flag escalation template
-      const escalationResponse = await fetch(`${req.url.split('/functions')[0]}/functions/v1/whatsapp-send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': req.headers.get('authorization') || ''
-        },
-        body: JSON.stringify({
+      // Send red flag escalation template using Supabase client
+      const { data: escalationData, error: escalationError } = await supabase.functions.invoke('whatsapp-send', {
+        body: {
           to: user_context.phone_e164,
           template: 'red_flag_escalation_v1',
           variables: ['support@productionphysio.com', 'support@productionphysio.com']
-        })
+        }
       });
       
       return new Response(JSON.stringify({ 
@@ -224,23 +219,18 @@ serve(async (req) => {
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
     
-    const middlewareResponse = await fetch(`https://fkvtnyvttgjiherassmn.supabase.co/functions/v1/middleware-api`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': req.headers.get('authorization') || ''
-      },
-      body: JSON.stringify(payload)
+    // Use Supabase client method instead of direct HTTP call
+    const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
+      body: payload
     });
 
-    if (!middlewareResponse.ok) {
-      const errorText = await middlewareResponse.text();
-      console.error(`Middleware API error ${middlewareResponse.status}:`, errorText);
-      throw new Error(`Middleware API error: ${middlewareResponse.status}`);
+    if (middlewareError) {
+      console.error('Middleware API error:', middlewareError);
+      throw new Error(`Middleware API error: ${middlewareError.message || 'Unknown error'}`);
     }
 
     // Process response from middleware API
-    const responseData = await middlewareResponse.json();
+    const responseData = middlewareData;
     console.log('Middleware API response:', responseData);
     
     let aiResponse = '';
