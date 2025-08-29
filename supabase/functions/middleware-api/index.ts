@@ -1,10 +1,16 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
+
+function joinUrl(base: string, endpoint: string) {
+  const b = base.endsWith("/") ? base : base + "/";
+  const e = (endpoint || "").replace(/^\/+/, ""); // strip leading slashes defensively
+  return new URL(e, b).toString();
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -13,38 +19,54 @@ serve(async (req) => {
   }
 
   try {
-    console.log("Middleware API function called with method:", req.method); // Updated
-
-    let params;
-    try {
-      params = await req.json();
-      console.log("Request params:", JSON.stringify(params));
-    } catch (e) {
-      console.error("Failed to parse request body:", e);
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON in request body" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const middlewareApiUrl = Deno.env.get("MIDDLEWARE_API_URL");
-    const coreApiKey = Deno.env.get("CORE_API_KEY");
-
-    console.log(
-      "Environment check - MIDDLEWARE_API_URL:",
-      middlewareApiUrl ? `Set (${middlewareApiUrl.substring(0, 50)}...)` : "Missing"
-    );
-    console.log(
-      "Environment check - CORE_API_KEY:",
-      coreApiKey ? "Set" : "Missing"
-    );
+    const { endpoint = "v2/generate", method = "POST", body, headers = {} } = await req.json().catch(() => ({}));
     
-    // Debug: Log actual values for troubleshooting
-    console.log("Full MIDDLEWARE_API_URL:", middlewareApiUrl);
-    console.log("CORE_API_KEY present:", !!coreApiKey);
+    console.log("Middleware API function called with:", { endpoint, method, hasBody: !!body });
+
+    const middlewareApiUrl = Deno.env.get("MIDDLEWARE_API_URL") ?? "";
+    const coreApiKey = Deno.env.get("CORE_API_KEY") ?? "";
+    
+    // Build the complete URL using safe joinUrl function
+    const requestUrl = joinUrl(middlewareApiUrl, endpoint);
+
+    // Add required headers that middleware expects
+    const appId = Deno.env.get("NEXT_PUBLIC_APP_ID") ?? "ai-twin-template";
+    const networkId = Deno.env.get("NEXT_PUBLIC_NETWORK_ID") ?? "default";
+    const region = Deno.env.get("MY_REGION") ?? "us-east-1";
+
+    const mergedHeaders = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "Authorization": "APP-REQUEST",
+      "x-api-key": coreApiKey,
+      "x-prifina-app-id": appId,
+      "x-prifina-network-id": networkId,
+      "x-region": region,
+      ...headers, // caller can override if needed
+    };
+
+    // Debug: Log what we're about to send
+    console.log("Request details:", JSON.stringify({
+      url: requestUrl,
+      method,
+      hasBody: !!body,
+      headers: mergedHeaders,
+      middlewareApiUrl,
+      endpoint
+    }, null, 2));
+
+    // Check for debug echo mode
+    if ((headers.debug as string) === "echo") {
+      return new Response(JSON.stringify({ 
+        url: requestUrl, 
+        method, 
+        headers: mergedHeaders, 
+        body 
+      }, null, 2), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     if (!middlewareApiUrl || !coreApiKey) {
       console.error("Missing API configuration");
@@ -57,21 +79,13 @@ serve(async (req) => {
       );
     }
 
-    const requestUrl = `${middlewareApiUrl}v2/generate`;
-    console.log("Making request to:", requestUrl);
+    // For GET, avoid sending a body (some servers 400 on GET+body)
+    const opts: RequestInit = { method, headers: mergedHeaders };
+    if (method.toUpperCase() !== "GET" && body !== undefined) {
+      opts.body = JSON.stringify(body);
+    }
 
-    console.log("Body", params);
-
-    const response = await fetch(requestUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: "APP-REQUEST",
-        "x-api-key": coreApiKey,
-      },
-      body: JSON.stringify(params),
-    });
+    const response = await fetch(requestUrl, opts);
 
     console.log("Response status:", response.status);
 

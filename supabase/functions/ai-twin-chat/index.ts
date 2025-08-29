@@ -218,10 +218,19 @@ serve(async (req) => {
 
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
-    
-    // Use Supabase client method to get streaming response
+
+    // Call middleware-api with proper endpoint structure
     const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
-      body: payload
+      body: {
+        endpoint: "v2/generate", // No leading slash!
+        method: "POST",
+        headers: {
+          "x-prifina-app-id": envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
+          "x-prifina-network-id": envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID,
+          "x-region": "us-east-1"
+        },
+        body: payload
+      }
     });
 
     if (middlewareError) {
