@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.9";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 // AI Twin chat processor with guardrails for WhatsApp channel
 const corsHeaders = {
@@ -14,9 +13,10 @@ const corsHeaders = {
 // Production configuration
 const LOG_LEVEL = Deno.env.get("LOG_LEVEL") || "info";
 const IS_DEBUG = LOG_LEVEL === "debug";
-const MAX_CONTEXT_LENGTH = 2500; // Characters
+const MAX_CONTEXT_LENGTH = 3000; // Characters
 const MAX_MESSAGE_LENGTH = 1000; // Characters
-const AI_GENERATION_TIMEOUT = 30000; // 30 seconds
+const AI_GENERATION_TIMEOUT = 15000; // 15 seconds
+const MAX_RETRIES = 2;
 
 // Request validation interface
 interface ChatRequest {
@@ -36,22 +36,6 @@ const RED_FLAG_KEYWORDS = [
 // Daily disclaimer text
 const DAILY_DISCLAIMER = "I don't diagnose or prescribe. I share general guidance and when to escalate to your physio/medical lead.";
 
-// Check if user needs daily disclaimer
-async function needsDailyDisclaimer(supabase: any, seatId: string): Promise<boolean> {
-  const today = new Date().toISOString().split('T')[0];
-  
-  const { data } = await supabase
-    .from('message_log')
-    .select('created_at')
-    .eq('seat_id', seatId)
-    .eq('direction', 'out')
-    .gte('created_at', `${today}T00:00:00.000Z`)
-    .lt('created_at', `${today}T23:59:59.999Z`)
-    .limit(1);
-    
-  return !data || data.length === 0;
-}
-
 // Check for red flag patterns
 function hasRedFlags(message: string): boolean {
   const lowerMessage = message.toLowerCase();
@@ -67,7 +51,7 @@ function buildAIContext(userContext: any, channel: string): string {
     `Channel: ${channel}`,
   ];
   
-  // Goals with length limit
+  // Goals with length limit - fix the typo
   if (userContext.goals) {
     const goalsText = typeof userContext.goals === 'object' 
       ? JSON.stringify(userContext.goals).replace(/[{}]/g, '').replace(/"/g, '').replace(/^goals:/, '')
@@ -158,6 +142,95 @@ function validateChatRequest(data: any): { valid: boolean; errors: string[]; san
   };
 }
 
+// Validate payload before sending to Amplify
+function validateAmplifyPayload(userId: string, knowledgebaseId: string, messages: any[]): string[] {
+  const errors: string[] = [];
+  
+  if (!userId || userId.trim().length === 0) {
+    errors.push("userId must be non-empty");
+  }
+  
+  // Validate UUID format for knowledgebaseId
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(knowledgebaseId)) {
+    errors.push("knowledgebaseId must be a valid UUID");
+  }
+  
+  // Validate messages array
+  if (!Array.isArray(messages) || messages.length === 0) {
+    errors.push("messages must be a non-empty array");
+  } else {
+    const hasUserMessage = messages.some(m => m.role === "user");
+    if (!hasUserMessage) {
+      errors.push("messages must include at least one user turn");
+    }
+  }
+  
+  return errors;
+}
+
+// Sleep utility
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Retry logic with exponential backoff
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries: number = MAX_RETRIES): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), AI_GENERATION_TIMEOUT);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Success or non-retryable error
+      if (response.ok || (response.status < 500 && response.status !== 429)) {
+        return response;
+      }
+      
+      // Handle rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after');
+        const delay = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+        if (attempt < maxRetries) {
+          await sleep(delay);
+          continue;
+        }
+      }
+      
+      // Handle 5xx errors with exponential backoff
+      if (response.status >= 500 && attempt < maxRetries) {
+        const jitter = Math.random() * 1000;
+        const delay = Math.pow(2, attempt) * 1000 + jitter;
+        await sleep(delay);
+        continue;
+      }
+      
+      return response;
+      
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Network timeout or connection error - retry once
+      if (attempt < Math.min(1, maxRetries)) {
+        const jitter = Math.random() * 1000;
+        const delay = 1000 + jitter;
+        await sleep(delay);
+        continue;
+      }
+    }
+  }
+  
+  throw lastError || new Error('Max retries exceeded');
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -166,11 +239,6 @@ serve(async (req) => {
   try {
     const requestId = crypto.randomUUID();
     console.log(`=== AI TWIN CHAT START [${requestId}] ===`);
-    
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
 
     // Validate and sanitize request
     const requestData = await req.json();
@@ -189,133 +257,114 @@ serve(async (req) => {
     }
 
     const { seat_id, message, channel, user_context } = validation.sanitized!;
-    console.log(`Processing AI chat [${requestId}] for seat ${seat_id}:`, 
-      IS_DEBUG ? message : `[${message.length} chars]`);
+    
+    if (IS_DEBUG) {
+      console.log(`Processing AI chat [${requestId}] for seat ${seat_id}: "${message}"`);
+    } else {
+      console.log(`Processing AI chat [${requestId}] for seat ${seat_id}: [${message.length} chars]`);
+    }
 
     // Check for red flags first
     if (hasRedFlags(message)) {
       console.log('Red flag detected, sending escalation template');
       
-      // Send red flag escalation template using Supabase client
-      const { data: escalationData, error: escalationError } = await supabase.functions.invoke('whatsapp-send', {
-        body: {
-          to: user_context.phone_e164,
-          template: 'red_flag_escalation_v1',
-          variables: ['support@productionphysio.com', 'support@productionphysio.com']
+      // Call WhatsApp send function directly via fetch to avoid supabase-js dependency
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      
+      if (supabaseUrl && serviceKey && user_context.phone_e164) {
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              to: user_context.phone_e164,
+              template: 'red_flag_escalation_v1',
+              variables: ['support@productionphysio.com', 'support@productionphysio.com']
+            })
+          });
+        } catch (e) {
+          console.error('Failed to send escalation template:', e);
         }
-      });
+      }
       
       return new Response(JSON.stringify({ 
         response: 'Red flag escalation sent',
-        escalated: true 
+        escalated: true,
+        requestId
       }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId }
       });
     }
 
-    // Check if daily disclaimer is needed
-    console.log('Checking disclaimer requirement...');
-    const needsDisclaimer = await needsDailyDisclaimer(supabase, seat_id);
-    console.log('Needs disclaimer:', needsDisclaimer);
-    
     // Build AI context
     const systemContext = buildAIContext(user_context, channel);
-    console.log('System context built');
+    console.log(`System context built [${requestId}]: ${systemContext.length} chars`);
     
-    // Call the core API directly since middleware API seems to have configuration issues
-    const CORE_API_URL = Deno.env.get('CORE_API_URL');
-    const CORE_API_KEY = Deno.env.get('CORE_API_KEY');
+    // Get required environment variables
+    const middlewareApiUrl = Deno.env.get('MIDDLEWARE_API_URL');
+    const appId = Deno.env.get('NEXT_PUBLIC_APP_ID') || "speak-to";
+    const networkId = Deno.env.get('NEXT_PUBLIC_NETWORK_ID') || "x_prifina";
+    const region = Deno.env.get('MY_REGION') || "us-east-1";
     
-    // Debug environment variables
-    console.log('=== ENVIRONMENT VARIABLES CHECK ===');
-    console.log('CORE_API_URL available:', !!CORE_API_URL);
-    console.log('CORE_API_KEY available:', !!CORE_API_KEY);
-    console.log('MIDDLEWARE_API_URL available:', !!Deno.env.get('MIDDLEWARE_API_URL'));
-    console.log('CORE_API_URL value:', CORE_API_URL ? CORE_API_URL.substring(0, 50) + '...' : 'NOT SET');
-    
-    if (!CORE_API_URL || !CORE_API_KEY) {
-      console.error('Missing core API configuration - returning fallback');
-      // Fallback response
-      const fallbackResponse = needsDisclaimer 
-        ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
-        : "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
+    if (!middlewareApiUrl) {
+      console.error('MIDDLEWARE_API_URL not configured - returning fallback');
+      const fallbackResponse = "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
         
       return new Response(JSON.stringify({ 
         response: fallbackResponse,
-        disclaimer_added: needsDisclaimer,
-        error: 'API configuration missing'
+        error: 'API configuration missing',
+        requestId
       }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId }
       });
     }
-
-    // Get required environment variables for proper API call
-    console.log('Getting environment variables...');
-    const { data: envData, error: envError } = await supabase.functions.invoke('get-env-var', {
-      body: {
-        name: ['NEXT_PUBLIC_NETWORK_ID', 'NEXT_PUBLIC_APP_ID']
-      }
-    });
-
-    if (envError || envData.error) {
-      console.error('Failed to get environment variables:', envError || envData.error);
-      throw new Error('Failed to load configuration');
-    }
-
-    // Build proper payload with all required parameters
-    const now = new Date();
-    const january = new Date(now.getFullYear(), 0, 1);
-    const dst = now.getTimezoneOffset() < january.getTimezoneOffset();
-    const offsetMinutes = now.getTimezoneOffset();
-    const hours = Math.floor(Math.abs(offsetMinutes) / 60);
-    const minutes = Math.abs(offsetMinutes) % 60;
-    const sign = offsetMinutes > 0 ? "-" : "+";
-    const gmtOffset = `GMT${sign}${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-
-    // Generate unique request ID
-    const requestId = crypto.randomUUID();
 
     // Validation guards
     const userId = "production-physiotherapy";
     const knowledgebaseId = "3b5e8136-2945-4cb9-b611-fff01f9708e8";
     
-    if (!userId || userId.trim().length === 0) {
-      throw new Error("userId must be non-empty");
-    }
+    const messages = [
+      {
+        role: "system", 
+        content: systemContext
+      },
+      {
+        role: "user", 
+        content: message // Clean user message only - no prefix
+      }
+    ];
     
-    // Validate UUID format for knowledgebaseId
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(knowledgebaseId)) {
-      throw new Error("knowledgebaseId must be a valid UUID");
-    }
-    
-    if (!message || message.trim().length === 0) {
-      throw new Error("User message cannot be empty");
+    // Validate payload before sending
+    const validationErrors = validateAmplifyPayload(userId, knowledgebaseId, messages);
+    if (validationErrors.length > 0) {
+      console.error(`Payload validation failed [${requestId}]:`, validationErrors);
+      return new Response(JSON.stringify({ 
+        error: 'Invalid payload', 
+        details: validationErrors,
+        requestId 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId }
+      });
     }
 
-    // Use system+user pattern - single source of context (NO duplication)
+    // Build payload with single source of context
     const payload = {
       userId,
       knowledgebaseId,
-      messages: [
-        {
-          role: "system", 
-          content: systemContext
-        },
-        {
-          role: "user", 
-          content: message // Clean user message only - no "User message:" prefix
-        }
-      ],
-      // Add conservative generation parameters
+      messages,
       temperature: 0.3,
       max_tokens: 512,
       metadata: {
-        appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID || "speak-to",
-        networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID || "x_prifina",
+        appId,
+        networkId,
         channel: channel || "whatsapp",
         sessionId: `seat_${seat_id}`,
-        requestId: requestId
+        requestId
         // NO userContext here - context is in system message only
       }
     };
@@ -327,92 +376,107 @@ serve(async (req) => {
       throw new Error("Cannot send both system message and metadata.userContext - use single source of context");
     }
 
-    console.log(`Calling middleware API [${requestId}] with payload structure:`, {
-      userId: !!payload.userId,
-      knowledgebaseId: !!payload.knowledgebaseId,
-      messageCount: payload.messages.length,
-      systemContextLength: payload.messages[0]?.content?.length || 0,
-      userMessageLength: payload.messages[1]?.content?.length || 0,
-      hasMetadata: !!payload.metadata
-    });
-
-    // Add timeout wrapper for AI generation
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('AI generation timeout')), AI_GENERATION_TIMEOUT);
-    });
-
-    const apiPromise = supabase.functions.invoke('middleware-api', {
-      body: {
-        endpoint: "v1/generate",
-        method: "POST", 
-        body: payload
-      }
-    });
-
-    const { data: middlewareData, error: middlewareError } = await Promise.race([
-      apiPromise,
-      timeoutPromise
-    ]) as any;
-
-    if (middlewareError) {
-      console.error(`Middleware API error [${requestId}]:`, middlewareError.message);
-      if (IS_DEBUG) {
-        console.error(`Full error details [${requestId}]:`, JSON.stringify(middlewareError, null, 2));
-      }
-      throw new Error(`Middleware API error: ${middlewareError.message || 'Unknown error'}`);
+    if (IS_DEBUG) {
+      console.log(`Calling Amplify API [${requestId}] with payload:`, {
+        userId: payload.userId,
+        knowledgebaseId: payload.knowledgebaseId,
+        messages: payload.messages.map(m => ({ role: m.role, length: m.content.length })),
+        metadata: payload.metadata
+      });
+    } else {
+      console.log(`Calling Amplify API [${requestId}] with:`, {
+        userId: !!payload.userId,
+        knowledgebaseId: !!payload.knowledgebaseId,
+        messageCount: payload.messages.length,
+        systemContextLength: payload.messages[0]?.content?.length || 0,
+        userMessageLength: payload.messages[1]?.content?.length || 0
+      });
     }
 
-    console.log('Middleware API response received');
+    // Call Amplify middleware directly with retry logic
+    const amplifyUrl = `${middlewareApiUrl.replace(/\/$/, '')}/v1/generate`;
     
+    const response = await fetchWithRetry(amplifyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-prifina-app-id': appId,
+        'x-prifina-network-id': networkId,
+        'x-region': region,
+        'x-request-id': requestId
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    const bodyPreview = responseText.substring(0, IS_DEBUG ? 4000 : 1000);
+    
+    console.log(`Amplify API response [${requestId}]:`, {
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      bodyLength: responseText.length,
+      bodyPreview: IS_DEBUG ? bodyPreview : `${bodyPreview.substring(0, 200)}...`
+    });
+
+    if (!response.ok) {
+      console.error(`Amplify API error [${requestId}]: ${response.status} ${response.statusText}`);
+      console.error(`Response body [${requestId}]:`, bodyPreview);
+      
+      const fallbackResponse = "I'm experiencing technical difficulties. Please contact support@productionphysio.com for assistance.";
+      
+      return new Response(JSON.stringify({ 
+        error: 'Upstream API error',
+        details: `${response.status} ${response.statusText}`,
+        fallback_response: fallbackResponse,
+        requestId
+      }), {
+        status: 500,
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'x-request-id': requestId
+        }
+      });
+    }
+
+    // Parse response
     let aiResponse = '';
-    
-    // Handle streaming response - the middleware API should return the complete response
-    if (typeof middlewareData === 'string') {
-      // Handle raw streaming response
-      const lines = middlewareData.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.substring(6));
-            if (data.text) {
-              aiResponse += data.text;
+    try {
+      const responseData = JSON.parse(responseText);
+      aiResponse = responseData.answer || responseData.response || responseData.text || '';
+    } catch (e) {
+      // Handle streaming or plain text response
+      if (responseText.includes('data: ')) {
+        const lines = responseText.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6));
+              if (data.text) aiResponse += data.text;
+              if (data.finish_reason) break;
+            } catch (parseError) {
+              console.log('Failed to parse streaming line:', line);
             }
-            if (data.finish_reason) {
-              break;
-            }
-          } catch (e) {
-            console.log('Failed to parse streaming line:', line);
           }
         }
-      }
-    } else if (middlewareData && typeof middlewareData === 'object') {
-      // Handle direct response object
-      if (middlewareData.answer) {
-        aiResponse = middlewareData.answer;
-      } else if (middlewareData.response) {
-        aiResponse = middlewareData.response;
-      } else if (middlewareData.text) {
-        aiResponse = middlewareData.text;
-      } else if (middlewareData.body && typeof middlewareData.body === 'string') {
-        try {
-          const bodyData = JSON.parse(middlewareData.body);
-          aiResponse = bodyData.answer || bodyData.response || bodyData.text || '';
-        } catch (e) {
-          aiResponse = middlewareData.body;
-        }
+      } else {
+        aiResponse = responseText;
       }
     }
     
     // Fallback if no response received
     if (!aiResponse) {
-      console.error('No AI response received from middleware API');
-      console.error('Raw response data:', JSON.stringify(middlewareData));
+      console.error(`No AI response received [${requestId}]`);
       aiResponse = 'Sorry, I had trouble processing your message. Please try again.';
     }
     
-    console.log('Final AI response length:', aiResponse.length);
+    console.log(`Final AI response [${requestId}]: ${aiResponse.length} chars`);
 
-    // Add disclaimer if needed
+    // Add daily disclaimer if needed (simplified check)
+    const today = new Date().toISOString().split('T')[0];
+    const needsDisclaimer = true; // For now, always add disclaimer to be safe
+    
     let finalResponse = aiResponse;
     if (needsDisclaimer && finalResponse) {
       finalResponse = `${DAILY_DISCLAIMER}\n\n${finalResponse}`;
@@ -430,7 +494,7 @@ serve(async (req) => {
     }), {
       headers: { 
         ...corsHeaders, 
-        'Content-Type': 'application/json',
+        'Content-Type': response.headers.get('content-type') || 'application/json',
         'x-request-id': requestId
       }
     });
@@ -443,9 +507,7 @@ serve(async (req) => {
     }
     
     // Provide helpful fallback response
-    const fallbackResponse = needsDisclaimer 
-      ? `${DAILY_DISCLAIMER}\n\nI'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`
-      : `I'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`;
+    const fallbackResponse = `I'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`;
     
     return new Response(JSON.stringify({ 
       error: 'Failed to process chat',
