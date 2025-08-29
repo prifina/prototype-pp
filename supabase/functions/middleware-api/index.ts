@@ -62,15 +62,27 @@ serve(async (req) => {
 
     console.log("Body", params);
 
+    // Simplify the request to match typical AI API expectations
+    const simplifiedPayload = {
+      message: params.statement || params.message,
+      knowledgebaseId: params.knowledgebaseId || "production-physio",
+      userId: params.userId,
+      sessionId: params.sessionId,
+      stream: params.stream || true,
+      debug: params.debug || false
+    };
+
+    console.log("Sending simplified payload:", JSON.stringify(simplifiedPayload));
+
     const response = await fetch(requestUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        Authorization: "APP-REQUEST",
+        Authorization: `Bearer ${coreApiKey}`,
         "x-api-key": coreApiKey,
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify(simplifiedPayload),
     });
 
     console.log("Response status:", response.status);
