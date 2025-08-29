@@ -53,12 +53,19 @@ function buildAIContext(userContext: any, channel: string): string {
   ];
   
   if (userContext.goals) {
-    context.push(`Goals: ${userContext.goals}`);
+    // Properly serialize goals object
+    const goalsText = typeof userContext.goals === 'object' 
+      ? JSON.stringify(userContext.goals).replace(/[{}]/g, '').replace(/"/g, '')
+      : userContext.goals;
+    context.push(`Goals: ${goalsText}`);
   }
   
   if (userContext.sleep_env) {
     const sleep = userContext.sleep_env;
-    context.push(`Sleep: ${sleep.environment} environment, ${sleep.noise_level} noise, ${sleep.light_control} light control`);
+    const sleepParts = [`${sleep.environment || 'unknown'} environment`];
+    if (sleep.noise_level) sleepParts.push(`${sleep.noise_level} noise`);
+    if (sleep.light_control) sleepParts.push(`${sleep.light_control} light control`);
+    context.push(`Sleep: ${sleepParts.join(', ')}`);
   }
   
   if (userContext.food_constraints) {
