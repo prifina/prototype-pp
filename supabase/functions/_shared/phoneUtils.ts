@@ -12,7 +12,7 @@ interface PhoneValidationResult {
 
 /**
  * Simple E.164 normalization for server-side use
- * Handles common UK phone number formats
+ * Handles common phone number formats with forgiving validation
  */
 export function normalizePhoneNumber(input: string, defaultCountry = 'GB'): PhoneValidationResult {
   const originalInput = input.trim();
@@ -30,8 +30,8 @@ export function normalizePhoneNumber(input: string, defaultCountry = 'GB'): Phon
     let cleanedInput = originalInput
       // Remove whatsapp: prefix
       .replace(/^whatsapp:/, '')
-      // Remove spaces and hyphens
-      .replace(/[\s\-]/g, '')
+      // Remove spaces, hyphens, parentheses, dots
+      .replace(/[\s\-\(\)\.]/g, '')
       // Remove the (0) trunk hint in +44 (0)7... format
       .replace(/^\+44\(0\)/, '+44')
       // Handle 0044 prefix
@@ -39,11 +39,21 @@ export function normalizePhoneNumber(input: string, defaultCountry = 'GB'): Phon
       // Handle leading 0 for UK numbers (07700... -> +447700...)
       .replace(/^0([1-9])/, '+44$1');
 
-    // Basic validation for UK mobile numbers
+    // Handle numbers starting with just "1" (assume US/Canada)
+    if (cleanedInput.match(/^1[2-9][0-9]{9}$/)) {
+      cleanedInput = '+' + cleanedInput;
+    }
+    
+    // Handle numbers without + but starting with country code
+    if (cleanedInput.match(/^[1-9][0-9]{10,14}$/) && !cleanedInput.startsWith('+')) {
+      cleanedInput = '+' + cleanedInput;
+    }
+
+    // Flexible validation for various formats
     if (cleanedInput.startsWith('+44')) {
-      // UK number - should be +44 followed by 10 digits for mobile
+      // UK number - should be +44 followed by 10 digits for mobile, or 11 for landline
       const digits = cleanedInput.substring(3);
-      if (digits.match(/^7[0-9]{9}$/)) {
+      if (digits.match(/^[1-9][0-9]{8,10}$/)) {
         return {
           isValid: true,
           e164: cleanedInput,
@@ -60,6 +70,30 @@ export function normalizePhoneNumber(input: string, defaultCountry = 'GB'): Phon
           originalInput
         };
       }
+    } else if (cleanedInput.startsWith('+')) {
+      // Other international numbers - basic length check (7-15 digits after +)
+      const digits = cleanedInput.substring(1);
+      if (digits.match(/^[1-9][0-9]{6,14}$/)) {
+        return {
+          isValid: true,
+          e164: cleanedInput,
+          originalInput
+        };
+      }
+    } else if (cleanedInput.match(/^[2-9][0-9]{9}$/)) {
+      // 10-digit US number without country code - add +1
+      return {
+        isValid: true,
+        e164: '+1' + cleanedInput,
+        originalInput
+      };
+    } else if (cleanedInput.match(/^[7-9][0-9]{9}$/)) {
+      // 10-digit UK mobile without country code - add +44
+      return {
+        isValid: true,
+        e164: '+44' + cleanedInput,
+        originalInput
+      };
     }
 
     return {
