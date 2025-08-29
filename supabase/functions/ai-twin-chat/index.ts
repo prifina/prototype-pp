@@ -194,7 +194,7 @@ serve(async (req) => {
     const requestId = crypto.randomUUID();
 
     const payload = {
-      stream: false,
+      stream: true,
       statement: `${systemContext}\n\nUser message: ${message}`,
       knowledgebaseId: 'production-physio',
       scoreLimit: 0.3,
@@ -219,7 +219,7 @@ serve(async (req) => {
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
     
-    // Use Supabase client method instead of direct HTTP call
+    // Use Supabase client method to get streaming response
     const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
       body: payload
     });
@@ -229,34 +229,55 @@ serve(async (req) => {
       throw new Error(`Middleware API error: ${middlewareError.message || 'Unknown error'}`);
     }
 
-    // Process response from middleware API
-    const responseData = middlewareData;
-    console.log('Middleware API response:', responseData);
+    console.log('Middleware API response received');
     
     let aiResponse = '';
     
-    // Extract response based on core API response format
-    if (responseData.answer) {
-      aiResponse = responseData.answer;
-    } else if (responseData.response) {
-      aiResponse = responseData.response;
-    } else if (responseData.text) {
-      aiResponse = responseData.text;
-    } else if (responseData.body && typeof responseData.body === 'string') {
-      // Try to parse body if it's a string
-      try {
-        const bodyData = JSON.parse(responseData.body);
-        aiResponse = bodyData.answer || bodyData.response || bodyData.text || '';
-      } catch (e) {
-        aiResponse = responseData.body;
+    // Handle streaming response - the middleware API should return the complete response
+    if (typeof middlewareData === 'string') {
+      // Handle raw streaming response
+      const lines = middlewareData.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.substring(6));
+            if (data.text) {
+              aiResponse += data.text;
+            }
+            if (data.finish_reason) {
+              break;
+            }
+          } catch (e) {
+            console.log('Failed to parse streaming line:', line);
+          }
+        }
+      }
+    } else if (middlewareData && typeof middlewareData === 'object') {
+      // Handle direct response object
+      if (middlewareData.answer) {
+        aiResponse = middlewareData.answer;
+      } else if (middlewareData.response) {
+        aiResponse = middlewareData.response;
+      } else if (middlewareData.text) {
+        aiResponse = middlewareData.text;
+      } else if (middlewareData.body && typeof middlewareData.body === 'string') {
+        try {
+          const bodyData = JSON.parse(middlewareData.body);
+          aiResponse = bodyData.answer || bodyData.response || bodyData.text || '';
+        } catch (e) {
+          aiResponse = middlewareData.body;
+        }
       }
     }
     
     // Fallback if no response received
     if (!aiResponse) {
-      console.error('No AI response received from middleware API:', responseData);
+      console.error('No AI response received from middleware API');
+      console.error('Raw response data:', JSON.stringify(middlewareData));
       aiResponse = 'Sorry, I had trouble processing your message. Please try again.';
     }
+    
+    console.log('Final AI response length:', aiResponse.length);
 
     // Add disclaimer if needed
     let finalResponse = aiResponse;

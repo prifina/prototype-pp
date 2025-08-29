@@ -70,10 +70,7 @@ serve(async (req) => {
         Authorization: "APP-REQUEST",
         "x-api-key": coreApiKey,
       },
-      body: JSON.stringify({
-        // stream: true,
-        ...params,
-      }),
+      body: JSON.stringify(params),
     });
 
     console.log("Response status:", response.status);

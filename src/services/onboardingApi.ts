@@ -62,9 +62,13 @@ export const onboardingApi = {
       const qrUrl = generateQRCodeURL(waLink);
 
       // Step 4: Create profile with form data
+      // Generate a temporary user_id that will be linked during authentication
+      const tempUserId = crypto.randomUUID();
+      
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .insert({
+          user_id: tempUserId,
           first_name: formData.name.split(' ')[0] || formData.name,
           last_name: formData.name.split(' ').slice(1).join(' ') || '',
           phone_number: phoneResult.e164,
