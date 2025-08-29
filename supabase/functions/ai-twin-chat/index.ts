@@ -196,7 +196,7 @@ serve(async (req) => {
       // Use proper documented API contract with UUID knowledgebase ID
       const payload = {
         userId: "production-physio", // twin handle/owner identifier
-        knowledgebaseId: "4669e569-2fbb-4ea8-a4db-7820d76f60c8", // proper UUID format
+        knowledgebaseId: "3b5e8136-2945-4cb9-b611-fff01f9708e8", // correct UUID that matches API key
         messages: [
           {
             role: "user", 
