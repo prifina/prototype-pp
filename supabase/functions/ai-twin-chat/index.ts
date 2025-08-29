@@ -235,7 +235,21 @@ serve(async (req) => {
 
     if (middlewareError) {
       console.error('Middleware API error:', middlewareError);
-      throw new Error(`Middleware API error: ${middlewareError.message || 'Unknown error'}`);
+      console.error('Full error details:', JSON.stringify(middlewareError, null, 2));
+      
+      // Instead of throwing, return a fallback response
+      const fallbackResponse = needsDisclaimer 
+        ? `${DAILY_DISCLAIMER}\n\nI'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.`
+        : "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
+        
+      return new Response(JSON.stringify({ 
+        response: fallbackResponse,
+        disclaimer_added: needsDisclaimer,
+        error: 'Middleware API error',
+        debug: middlewareError
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     console.log('Middleware API response received');
