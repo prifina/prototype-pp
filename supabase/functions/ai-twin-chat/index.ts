@@ -167,13 +167,53 @@ serve(async (req) => {
       });
     }
 
+    // Get required environment variables for proper API call
+    console.log('Getting environment variables...');
+    const { data: envData, error: envError } = await supabase.functions.invoke('get-env-var', {
+      body: {
+        name: ['NEXT_PUBLIC_NETWORK_ID', 'NEXT_PUBLIC_APP_ID']
+      }
+    });
+
+    if (envError || envData.error) {
+      console.error('Failed to get environment variables:', envError || envData.error);
+      throw new Error('Failed to load configuration');
+    }
+
+    // Build proper payload with all required parameters
+    const now = new Date();
+    const january = new Date(now.getFullYear(), 0, 1);
+    const dst = now.getTimezoneOffset() < january.getTimezoneOffset();
+    const offsetMinutes = now.getTimezoneOffset();
+    const hours = Math.floor(Math.abs(offsetMinutes) / 60);
+    const minutes = Math.abs(offsetMinutes) % 60;
+    const sign = offsetMinutes > 0 ? "-" : "+";
+    const gmtOffset = `GMT${sign}${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+
+    // Generate unique request ID
+    const requestId = crypto.randomUUID();
+
     const payload = {
-      message: `${systemContext}\n\nUser message: ${message}`,
-      knowledgebaseId: 'production-physio',
-      userId: user_context.phone_e164 || 'anonymous',
-      sessionId: `seat_${seat_id}`,
       stream: true,
-      debug: true
+      statement: `${systemContext}\n\nUser message: ${message}`,
+      knowledgebaseId: 'production-physio',
+      scoreLimit: 0.3,
+      userId: user_context.phone_e164 || 'anonymous',
+      requestId: requestId,
+      debug: true,
+      userLanguage: 'English',
+      msgIdx: 0,
+      sessionId: `seat_${seat_id}`,
+      networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID,
+      appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
+      localize: {
+        locale: 'en-US',
+        timeZone: 'America/New_York',
+        offset: offsetMinutes,
+        currentTime: now.toISOString(),
+        dst,
+        gmtOffset,
+      }
     };
 
     console.log('Calling middleware API with proper payload...');
