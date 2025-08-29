@@ -219,10 +219,10 @@ serve(async (req) => {
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
 
-    // Call middleware-api with proper endpoint structure
+    // Call middleware-api with proper contract (no leading slash!)
     const { data: middlewareData, error: middlewareError } = await supabase.functions.invoke('middleware-api', {
       body: {
-        endpoint: "v2/generate", // No leading slash!
+        endpoint: "v2/generate", // ✅ no leading slash
         method: "POST",
         headers: {
           "x-prifina-app-id": envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
