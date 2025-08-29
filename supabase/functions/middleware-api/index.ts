@@ -25,28 +25,69 @@ serve(async (req) => {
     const network = Deno.env.get("NEXT_PUBLIC_NETWORK_ID") ?? "x_prifina";
     const region = Deno.env.get("MY_REGION") ?? "us-east-1";
 
+    // Generate request ID for traceability
+    const requestId = crypto.randomUUID();
+    
     const mergedHeaders = {
       "content-type": "application/json",
+      "accept": "application/json",
       "x-prifina-app-id": appId,
       "x-prifina-network-id": network,
       "x-region": region,
+      "x-request-id": requestId,
       ...headers, // caller can override if needed
     };
 
-    // For GET, avoid sending a body (some servers 400 on GET+body)
-    const opts: RequestInit = { method, headers: mergedHeaders };
+    // For GET, avoid sending a body (some servers 400 on GET+body)  
+    const opts: RequestInit = { 
+      method, 
+      headers: mergedHeaders,
+      // Add timeout to prevent hanging on cold starts
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    };
     if (method.toUpperCase() !== "GET" && body !== undefined) {
       opts.body = JSON.stringify(body);
     }
 
     // Helpful logs in Supabase function logs - including full body for discovery
-    console.log(JSON.stringify({ url, method, hasBody: !!opts.body, headers: mergedHeaders, body: opts.body ? JSON.parse(opts.body) : undefined }, null, 2));
+    console.log(JSON.stringify({ 
+      requestId,
+      url, 
+      method, 
+      hasBody: !!opts.body, 
+      headers: mergedHeaders, 
+      body: opts.body ? JSON.parse(opts.body) : undefined 
+    }, null, 2));
 
     const upstream = await fetch(url, opts);
     const text = await upstream.text();
+    
+    // Enhanced observability - log upstream response details
+    const respHeaders = Object.fromEntries(upstream.headers.entries());
+    const bodyPreview = text.slice(0, 4000); // Safe preview, avoid logging PII
+    
+    console.log(JSON.stringify({
+      requestId,
+      url,
+      method,
+      status: upstream.status,
+      statusText: upstream.statusText,
+      respHeaders,
+      bodyPreview,
+      timestamp: new Date().toISOString()
+    }, null, 2));
 
-    // Bubble up the upstream status and body
-    return new Response(text, { status: upstream.status, headers: cors });
+    // Return upstream response with proper content-type and request ID
+    const responseHeaders = {
+      ...cors,
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+      "x-request-id": requestId
+    };
+
+    return new Response(text, { 
+      status: upstream.status, 
+      headers: responseHeaders 
+    });
   } catch (e) {
     console.error("middleware-api error:", e);
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: cors });

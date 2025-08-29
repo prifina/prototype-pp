@@ -53,11 +53,11 @@ function buildAIContext(userContext: any, channel: string): string {
   ];
   
   if (userContext.goals) {
-    // Properly serialize goals object
+    // Properly serialize goals object - fix typo: remove duplicate "goals:" prefix
     const goalsText = typeof userContext.goals === 'object' 
-      ? JSON.stringify(userContext.goals).replace(/[{}]/g, '').replace(/"/g, '')
-      : userContext.goals;
-    context.push(`Goals: ${goalsText}`);
+      ? JSON.stringify(userContext.goals).replace(/[{}]/g, '').replace(/"/g, '').replace(/^goals:/, '')
+      : userContext.goals.toString().replace(/^goals:/, '');
+    context.push(`Goals: ${goalsText.trim()}`);
   }
   
   if (userContext.sleep_env) {
@@ -193,25 +193,55 @@ serve(async (req) => {
     // Generate unique request ID
     const requestId = crypto.randomUUID();
 
-      // Use proper documented API contract with UUID knowledgebase ID
-      const payload = {
-        userId: "production-physiotherapy", // twin handle/owner identifier
-        knowledgebaseId: "3b5e8136-2945-4cb9-b611-fff01f9708e8", // correct UUID that matches API key
-        messages: [
-          {
-            role: "user", 
-            content: `${systemContext}\n\nUser message: ${message}`
-          }
-        ],
-        stream: false,
-        metadata: {
-          appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID || "speak-to",
-          networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID || "x_prifina",
-          channel: channel || "whatsapp",
-          sessionId: `seat_${seat_id}`,
-          userContext: systemContext
+    // Validation guards
+    const userId = "production-physiotherapy";
+    const knowledgebaseId = "3b5e8136-2945-4cb9-b611-fff01f9708e8";
+    
+    if (!userId || userId.trim().length === 0) {
+      throw new Error("userId must be non-empty");
+    }
+    
+    // Validate UUID format for knowledgebaseId
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(knowledgebaseId)) {
+      throw new Error("knowledgebaseId must be a valid UUID");
+    }
+    
+    if (!message || message.trim().length === 0) {
+      throw new Error("User message cannot be empty");
+    }
+
+    // Use system+user pattern - single source of context (NO duplication)
+    const payload = {
+      userId,
+      knowledgebaseId,
+      messages: [
+        {
+          role: "system", 
+          content: systemContext
+        },
+        {
+          role: "user", 
+          content: message // Clean user message only - no "User message:" prefix
         }
-      };
+      ],
+      // Removed stream parameter for now
+      metadata: {
+        appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID || "speak-to",
+        networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID || "x_prifina",
+        channel: channel || "whatsapp",
+        sessionId: `seat_${seat_id}`,
+        requestId: requestId
+        // NO userContext here - context is in system message only
+      }
+    };
+    
+    // Assert single source of context
+    const hasSystemMessage = payload.messages.some(m => m.role === "system");
+    const hasMetadataContext = !!payload.metadata.userContext;
+    if (hasSystemMessage && hasMetadataContext) {
+      throw new Error("Cannot send both system message and metadata.userContext - use single source of context");
+    }
 
     console.log('Calling middleware API with proper payload...');
     console.log('Payload keys:', Object.keys(payload));
