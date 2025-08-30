@@ -30,7 +30,7 @@ export const testWhatsAppPipeline = async () => {
           role: 'resident',
           show_name: 'Wicked',
           tour_or_resident: 'resident',
-          goals: { goals: 'Better energy levels' },
+          goals: 'Better energy levels',
           sleep_env: { environment: 'home', noise_level: 'quiet' },
           food_constraints: { allergies: ['Dairy'], dietary_preferences: ['Vegetarian'] },
           injuries_notes: 'Currently training for a marathon',
