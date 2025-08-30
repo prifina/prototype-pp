@@ -352,13 +352,11 @@ serve(async (req) => {
       });
     }
 
-    // Build payload with single source of context
+    // Build payload with single source of context (remove optional params temporarily)
     const payload = {
       userId,
       knowledgebaseId,
       messages,
-      temperature: 0.3,
-      max_tokens: 512,
       metadata: {
         appId,
         networkId,
@@ -395,6 +393,7 @@ serve(async (req) => {
 
     // Call Amplify middleware directly with retry logic
     const amplifyUrl = `${middlewareApiUrl.replace(/\/$/, '')}/v1/generate`;
+    console.log(`Final Amplify URL [${requestId}]: ${amplifyUrl}`);
     
     const response = await fetchWithRetry(amplifyUrl, {
       method: 'POST',
