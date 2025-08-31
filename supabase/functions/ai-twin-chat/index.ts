@@ -142,8 +142,8 @@ function validateChatRequest(data: any): { valid: boolean; errors: string[]; san
   };
 }
 
-// Validate payload before sending to Amplify
-function validateAmplifyPayload(userId: string, knowledgebaseId: string, messages: any[]): string[] {
+// Validate required fields for middleware API
+function validateMiddlewarePayload(userId: string, knowledgebaseId: string, statement: string): string[] {
   const errors: string[] = [];
   
   if (!userId || userId.trim().length === 0) {
@@ -156,14 +156,9 @@ function validateAmplifyPayload(userId: string, knowledgebaseId: string, message
     errors.push("knowledgebaseId must be a valid UUID");
   }
   
-  // Validate messages array
-  if (!Array.isArray(messages) || messages.length === 0) {
-    errors.push("messages must be a non-empty array");
-  } else {
-    const hasUserMessage = messages.some(m => m.role === "user");
-    if (!hasUserMessage) {
-      errors.push("messages must include at least one user turn");
-    }
+  // Validate statement
+  if (!statement || statement.trim().length === 0) {
+    errors.push("statement must be non-empty");
   }
   
   return errors;
@@ -305,13 +300,14 @@ serve(async (req) => {
     console.log(`System context built [${requestId}]: ${systemContext.length} chars`);
     
     // Get required environment variables
-    const middlewareApiUrl = Deno.env.get('MIDDLEWARE_API_URL');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const appId = Deno.env.get('NEXT_PUBLIC_APP_ID') || "speak-to";
     const networkId = Deno.env.get('NEXT_PUBLIC_NETWORK_ID') || "x_prifina";
     const region = Deno.env.get('MY_REGION') || "us-east-1";
     
-    if (!middlewareApiUrl) {
-      console.error('MIDDLEWARE_API_URL not configured - returning fallback');
+    if (!supabaseUrl || !serviceKey) {
+      console.error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured - returning fallback');
       const fallbackResponse = "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
         
       return new Response(JSON.stringify({ 
@@ -327,19 +323,8 @@ serve(async (req) => {
     const userId = "production-physiotherapy";
     const knowledgebaseId = "3b5e8136-2945-4cb9-b611-fff01f9708e8";
     
-    const messages = [
-      {
-        role: "system", 
-        content: systemContext
-      },
-      {
-        role: "user", 
-        content: message // Clean user message only - no prefix
-      }
-    ];
-    
     // Validate payload before sending
-    const validationErrors = validateAmplifyPayload(userId, knowledgebaseId, messages);
+    const validationErrors = validateMiddlewarePayload(userId, knowledgebaseId, message);
     if (validationErrors.length > 0) {
       console.error(`Payload validation failed [${requestId}]:`, validationErrors);
       return new Response(JSON.stringify({ 
@@ -352,60 +337,62 @@ serve(async (req) => {
       });
     }
 
-    // Build payload with single source of context (remove optional params temporarily)
+    // Build payload for middleware-api using statement + context format
     const payload = {
       userId,
       knowledgebaseId,
-      messages,
-      metadata: {
-        appId,
-        networkId,
-        channel: channel || "whatsapp",
-        sessionId: `seat_${seat_id}`,
-        requestId
-        // NO userContext here - context is in system message only
+      statement: message,           // Clean user message
+      context: systemContext,       // Built context string
+      stream: false,
+      scoreLimit: 0.3,
+      sessionId: `seat_${seat_id}`,
+      requestId,
+      userLanguage: "English",
+      msgIdx: 0,
+      networkId,
+      appId,
+      localize: {
+        locale: "en-US",
+        timeZone: "UTC",
+        offset: 0,
+        currentTime: new Date().toISOString(),
+        dst: false,
+        gmtOffset: "GMT+00:00"
       }
     };
-    
-    // Assert single source of context
-    const hasSystemMessage = payload.messages.some(m => m.role === "system");
-    const hasMetadataContext = !!payload.metadata.userContext;
-    if (hasSystemMessage && hasMetadataContext) {
-      throw new Error("Cannot send both system message and metadata.userContext - use single source of context");
-    }
 
     if (IS_DEBUG) {
-      console.log(`Calling Amplify API [${requestId}] with payload:`, {
+      console.log(`Calling middleware-api [${requestId}] with payload:`, {
         userId: payload.userId,
         knowledgebaseId: payload.knowledgebaseId,
-        messages: payload.messages.map(m => ({ role: m.role, length: m.content.length })),
-        metadata: payload.metadata
+        statementLength: payload.statement.length,
+        contextLength: payload.context.length,
+        sessionId: payload.sessionId
       });
     } else {
-      console.log(`Calling Amplify API [${requestId}] with:`, {
+      console.log(`Calling middleware-api [${requestId}] with:`, {
         userId: !!payload.userId,
         knowledgebaseId: !!payload.knowledgebaseId,
-        messageCount: payload.messages.length,
-        systemContextLength: payload.messages[0]?.content?.length || 0,
-        userMessageLength: payload.messages[1]?.content?.length || 0
+        statementLength: payload.statement.length,
+        contextLength: payload.context.length
       });
     }
 
-    // Call Amplify middleware directly with retry logic
-    const amplifyUrl = `${middlewareApiUrl.replace(/\/$/, '')}/v1/generate`;
-    console.log(`Final Amplify URL [${requestId}]: ${amplifyUrl}`);
+    // Call middleware-api function (server-to-server)
+    const middlewareUrl = `${supabaseUrl}/functions/v1/middleware-api`;
+    console.log(`Calling middleware-api [${requestId}]: ${middlewareUrl}`);
     
-    const response = await fetchWithRetry(amplifyUrl, {
+    const response = await fetchWithRetry(middlewareUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'x-prifina-app-id': appId,
-        'x-prifina-network-id': networkId,
-        'x-region': region,
-        'x-request-id': requestId
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        endpoint: 'v1/generate',
+        method: 'POST',
+        body: payload
+      })
     });
 
     const responseText = await response.text();
