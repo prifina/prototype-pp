@@ -111,6 +111,33 @@ serve(async (req) => {
     const requestData: MiddlewareRequest = await req.json().catch(() => ({}));
     const { endpoint = "", method = "POST", body, headers = {} } = requestData;
     
+    // ECHO mode for debugging - return payload without calling Amplify
+    if ((headers?.["x-debug"] as string) === "echo") {
+      const base = Deno.env.get("MIDDLEWARE_API_URL") ?? "";
+      const url = joinUrl(base, endpoint);
+      
+      // Build merged headers for echo
+      const appId = Deno.env.get("NEXT_PUBLIC_APP_ID") ?? "speak-to";
+      const network = Deno.env.get("NEXT_PUBLIC_NETWORK_ID") ?? "x_prifina";
+      const region = Deno.env.get("MY_REGION") ?? "us-east-1";
+      const requestId = crypto.randomUUID();
+      
+      const mergedHeaders = {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "x-prifina-app-id": appId,
+        "x-prifina-network-id": network,
+        "x-region": region,
+        "x-request-id": requestId,
+        ...headers,
+      };
+      
+      return new Response(JSON.stringify({ base, url, method, headers: mergedHeaders, body }, null, 2), {
+        status: 200,
+        headers: { ...cors, "content-type": "application/json" }
+      });
+    }
+    
     // Validate request
     if (!endpoint && method !== "GET") {
       return new Response(JSON.stringify({ error: "endpoint is required for non-GET requests" }), {
@@ -172,36 +199,23 @@ serve(async (req) => {
     console.log(JSON.stringify(logData, null, 2));
 
     const upstream = await fetchWithRetry(url, opts);
-    const text = await upstream.text();
     
-    // Enhanced observability - log upstream response details
+    // Capture upstream error details for debugging
     const respHeaders = Object.fromEntries(upstream.headers.entries());
-    const safeBodyPreview = IS_DEBUG ? text.slice(0, 1000) : text.slice(0, 200);
-    
-    const responseLog = {
+    const text = await upstream.text();
+    console.log(JSON.stringify({
       requestId,
-      method,
+      url,
       status: upstream.status,
-      statusText: upstream.statusText,
-      respHeaders: IS_DEBUG ? respHeaders : { "content-type": respHeaders["content-type"] },
-      bodyPreview: safeBodyPreview,
-      bodyLength: text.length,
-      timestamp: new Date().toISOString()
-    };
+      respHeaders,
+      bodyPreview: text.slice(0, 4000)
+    }, null, 2));
     
-    console.log(JSON.stringify(responseLog, null, 2));
-
-    // Return upstream response with proper content-type and request ID
-    const responseHeaders = {
-      ...cors,
-      "content-type": upstream.headers.get("content-type") ?? "application/json",
-      "x-request-id": requestId
-    };
-
-    return new Response(text, { 
-      status: upstream.status, 
-      headers: responseHeaders 
+    return new Response(text, {
+      status: upstream.status,
+      headers: { ...cors, "content-type": upstream.headers.get("content-type") ?? "application/json" }
     });
+
   } catch (e) {
     const errorId = crypto.randomUUID();
     console.error(`middleware-api error [${errorId}]:`, e.message);

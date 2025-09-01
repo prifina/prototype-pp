@@ -337,18 +337,18 @@ serve(async (req) => {
       });
     }
 
-    // Build payload for middleware-api using statement + context format
+    // Build payload for middleware-api using statement + context format (no messages array)
     const payload = {
       userId,
       knowledgebaseId,
       statement: message,           // Clean user message
-      context: systemContext,       // Built context string
+      context: systemContext || "", // Always send context as string (empty string is OK)
       stream: false,
       scoreLimit: 0.3,
       sessionId: `seat_${seat_id}`,
       requestId,
       userLanguage: "English",
-      msgIdx: 0,
+      msgIdx: 0,                    // Integer, 0 on first turn
       networkId,
       appId,
       localize: {
