@@ -25,14 +25,16 @@ serve(async (req) => {
     
     const formData = new FormData();
     formData.append('MessageSid', 'SM_test_123456789');
-    formData.append('From', 'whatsapp:+16468014054');
+    formData.append('From', 'whatsapp:+16468014054');  // This matches the seat in DB
     formData.append('To', 'whatsapp:+14155238886');
-    formData.append('Body', 'Hello, this is a test message from the diagnostic');
+    formData.append('Body', 'Hello, I need help with stretching exercises');  // More realistic message
     formData.append('AccountSid', 'AC6d2c83aa6953e57d58e7e7dcbe99ef40');
     formData.append('NumMedia', '0');
     formData.append('NumSegments', '1');
     formData.append('SmsStatus', 'received');
     formData.append('ApiVersion', '2010-04-01');
+    formData.append('ProfileName', 'Demo User');  // Add profile name for WhatsApp context
+    formData.append('WaId', '16468014054');       // Add WhatsApp ID
 
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',

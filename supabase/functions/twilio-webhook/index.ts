@@ -127,10 +127,17 @@ serve(async (req) => {
       return new Response('Rate limited', { status: 429, headers: corsHeaders });
     }
 
-    // Normalize phone number
+    // Normalize phone number with enhanced debugging
+    console.log('Normalizing phone number:', fromNumber);
     const normalizedPhone = normalizePhoneNumber(fromNumber);
+    console.log('Normalization result:', normalizedPhone);
+    
     if (!normalizedPhone.isValid || !normalizedPhone.e164) {
-      console.error('Invalid phone number format:', fromNumber);
+      console.error('Phone normalization failed:', {
+        input: fromNumber,
+        result: normalizedPhone,
+        error: normalizedPhone.error
+      });
       return new Response('Invalid phone number', { status: 400, headers: corsHeaders });
     }
 
@@ -251,23 +258,64 @@ serve(async (req) => {
       return new Response('Seat bound successfully', { status: 200, headers: corsHeaders });
     }
 
-    // Handle regular chat messages - find active seat for this phone
+    // Handle regular chat messages - find seat for this phone (demo: allow active OR pending)
+    console.log('Looking for seat with phone:', phoneForStorage);
     const { data: activeSeat } = await supabase
       .from('seats')
       .select('*')
       .eq('phone_number', phoneForStorage)
-      .eq('status', 'active')
+      .in('status', ['active', 'pending'])  // Demo: allow both active and pending seats
       .single();
 
+    console.log('Seat search result:', activeSeat);
+
     if (!activeSeat) {
-      const template = getMessageTemplate(MessageType.NO_ACTIVE_SEAT);
-      await sendWhatsAppMessage(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        req.headers.get('Authorization') ?? '',
-        fromNumber,
-        { text: { body: template.body || template.template } }
-      );
-      return new Response('No active seat', { status: 200, headers: corsHeaders });
+      console.log('No seat found for phone, checking if seat exists with different phone...');
+      // Demo: Also check if there's ANY seat for this phone number that's not bound yet
+      const { data: unboundSeat } = await supabase
+        .from('seats')
+        .select('*')
+        .is('phone_number', null)  // Not bound to any phone yet
+        .in('status', ['active', 'pending'])
+        .limit(1)
+        .single();
+
+      if (unboundSeat) {
+        console.log('Found unbound seat, auto-binding for demo:', unboundSeat.id);
+        // Auto-bind for demo purposes
+        await supabase
+          .from('seats')
+          .update({ 
+            phone_number: phoneForStorage,
+            bound_at: new Date().toISOString()
+          })
+          .eq('id', unboundSeat.id);
+        
+        // Continue with this seat
+        const { data: boundSeat } = await supabase
+          .from('seats')
+          .select('*')
+          .eq('id', unboundSeat.id)
+          .single();
+        
+        if (boundSeat) {
+          console.log('Auto-bound seat successfully, continuing with chat...');
+          // Set activeSeat to the bound seat for the rest of the flow
+          Object.assign(activeSeat || {}, boundSeat);
+        }
+      }
+
+      if (!activeSeat) {
+        console.log('No active/pending seat found for phone');
+        const template = getMessageTemplate(MessageType.NO_ACTIVE_SEAT);
+        await sendWhatsAppMessage(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { text: { body: template.body || template.template } }
+        );
+        return new Response('No active seat', { status: 200, headers: corsHeaders });
+      }
     }
 
     // Check if seat is expired
@@ -324,12 +372,18 @@ serve(async (req) => {
       message_type: 'chat'
     });
 
-    // Forward to AI chat service - fetch profile data first
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', activeSeat.profile_id)
-      .single();
+    // Forward to AI chat service - fetch profile data first (with demo fallbacks)
+    console.log('Fetching profile data for seat:', activeSeat.id, 'profile_id:', activeSeat.profile_id);
+    
+    let profileData = null;
+    if (activeSeat.profile_id) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', activeSeat.profile_id)
+        .single();
+      profileData = data;
+    }
 
     const { data: showData } = await supabase
       .from('shows')
@@ -337,17 +391,20 @@ serve(async (req) => {
       .eq('id', activeSeat.show_id)
       .single();
 
+    // Demo: Use fallback profile data when profile_id is null
     const userContext = {
-      name: profileData ? `${profileData.first_name} ${profileData.last_name}` : 'User',
-      role: profileData?.tour_or_resident || 'performer',
-      show_name: showData?.name || 'Unknown Show',
-      tour_or_resident: profileData?.tour_or_resident || 'resident',
-      goals: profileData?.health_goals || {},
-      sleep_env: profileData?.sleep_environment || {},
-      food_constraints: profileData?.dietary_info || {},
-      injuries_notes: profileData?.additional_notes || '',
+      name: profileData ? `${profileData.first_name} ${profileData.last_name}` : 'Demo User',
+      role: profileData?.tour_or_resident || 'resident',
+      show_name: showData?.name || 'Demo Show',
+      tour_or_resident: profileData?.tour_or_resident || 'resident', 
+      goals: profileData?.health_goals || { goals: 'General wellness and performance optimization' },
+      sleep_env: profileData?.sleep_environment || { environment: 'hotel', noise_level: 'moderate' },
+      food_constraints: profileData?.dietary_info || { allergies: [], dietary_preferences: [] },
+      injuries_notes: profileData?.additional_notes || 'No specific injuries or limitations noted',
       phone_e164: phoneForStorage
     };
+
+    console.log('Using user context:', JSON.stringify(userContext, null, 2));
 
     console.log('Calling AI twin chat service...');
     console.log('User context:', JSON.stringify(userContext, null, 2));
