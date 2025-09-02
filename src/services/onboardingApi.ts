@@ -47,14 +47,24 @@ export const onboardingApi = {
     try {
       console.log('Onboarding API - Starting submission for:', { showId, phone: formData.phone_number });
       
-      // Step 1: Validate phone number format
+      // STEP 1: Ensure clean unauthenticated state for onboarding
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // If there's an authenticated user that's NOT a system admin, sign them out
+      // This ensures clean onboarding state
+      if (user && !user.email?.endsWith('@productionphysio.com')) {
+        console.log('Onboarding API - Clearing authenticated session for clean onboarding');
+        await supabase.auth.signOut();
+      }
+      
+      // STEP 2: Validate phone number format
       const phoneResult = normalizePhoneNumber(formData.phone_number);
       console.log('Onboarding API - Phone validation result:', phoneResult);
       if (!phoneResult.isValid) {
         throw new Error(`Invalid phone number format: ${phoneResult.error}. Please enter a valid mobile number.`);
       }
 
-      // Step 2: Find matching seat for this phone in this show
+      // STEP 3: Find matching seat for this phone in this show
       console.log('Onboarding API - Looking for seat with phone:', phoneResult.e164);
       const matchingSeat = await seatApi.findSeatByPhone(showId, formData.phone_number);
       console.log('Onboarding API - Seat lookup result:', matchingSeat);
@@ -62,17 +72,15 @@ export const onboardingApi = {
         throw new Error(`This number (${phoneResult.e164}) isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
       }
 
-      // Step 3: Generate WhatsApp link and QR code pointing to Twilio sandbox
+      // STEP 4: Generate WhatsApp link and QR code
       const waLink = generateWhatsAppLink(matchingSeat.seat_code);
       const qrUrl = generateQRCodeURL(waLink);
 
-      // Step 4: Create profile with form data
-      // Generate a temporary user_id that will be linked during authentication
-      const tempUserId = crypto.randomUUID();
-      console.log('Onboarding API - Creating profile with temp user ID:', tempUserId);
+      // STEP 5: Create profile WITHOUT user_id (will be linked later during authentication)
+      console.log('Onboarding API - Creating profile for unauthenticated onboarding');
       
       const profileData = {
-        user_id: tempUserId,
+        // NO user_id - will be NULL initially (allowed by RLS policy)
         first_name: formData.name.split(' ')[0] || formData.name,
         last_name: formData.name.split(' ').slice(1).join(' ') || '',
         phone_number: phoneResult.e164,
@@ -101,7 +109,7 @@ export const onboardingApi = {
         }
       };
       
-      console.log('Onboarding API - Profile data to insert:', profileData);
+      console.log('Onboarding API - Profile data to insert (unauthenticated):', profileData);
       
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -111,12 +119,14 @@ export const onboardingApi = {
 
       if (profileError) {
         console.error('Onboarding API - Profile creation error:', profileError);
+        // Enhanced error logging for debugging
+        console.error('Auth context during error:', await supabase.auth.getUser());
         throw new Error(`Failed to create profile: ${profileError.message}`);
       }
       
-      console.log('Onboarding API - Profile created successfully:', profile);
+      console.log('Onboarding API - Profile created successfully (unauthenticated):', profile);
 
-      // Step 5: Update seat to bind it to the profile and activate it
+      // STEP 6: Update seat to bind it to the profile and activate it
       console.log('Onboarding API - Updating seat:', matchingSeat.id, 'with profile:', profile.id);
       const { error: seatUpdateError } = await supabase
         .from('seats')
@@ -133,15 +143,7 @@ export const onboardingApi = {
         throw new Error(`Failed to activate seat: ${seatUpdateError.message}`);
       }
       
-      console.log('Onboarding API - Seat updated successfully');
-
-      console.log('Onboarding completed successfully:', {
-        showId,
-        seatId: matchingSeat.id,
-        profileId: profile.id,
-        phoneE164: phoneResult.e164,
-        seatCode: matchingSeat.seat_code
-      });
+      console.log('Onboarding API - Onboarding completed successfully (unauthenticated flow)');
 
       return {
         seat_id: matchingSeat.id,
@@ -180,6 +182,19 @@ export const onboardingApi = {
     } catch (error) {
       console.error('WhatsApp link retrieval error:', error);
       throw error;
+    }
+  },
+
+  /**
+   * Development helper: Clear any admin sessions that might interfere with onboarding
+   */
+  async clearAdminSession(): Promise<void> {
+    if (process.env.NODE_ENV === 'development') {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && user.email?.endsWith('@productionphysio.com')) {
+        console.log('Dev Mode: Clearing admin session for clean onboarding test');
+        await supabase.auth.signOut();
+      }
     }
   }
 };

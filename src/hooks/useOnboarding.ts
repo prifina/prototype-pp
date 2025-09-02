@@ -34,17 +34,30 @@ export const useOnboarding = () => {
   ): Promise<OnboardingResponse | null> => {
     setIsLoading(true);
     try {
-      console.log('Starting onboarding for phone:', formData.phone_number);
+      console.log('Starting unauthenticated onboarding for phone:', formData.phone_number);
       const result = await onboardingApi.submitOnboarding(productionId, formData);
-      console.log('Onboarding successful:', result);
+      console.log('Unauthenticated onboarding successful:', result);
       toast({
         title: "Onboarding Complete!",
-        description: "Your AI Twin access has been set up successfully.",
+        description: "Your AI Twin access has been set up successfully. You can now sign up for your account.",
       });
       return result;
     } catch (error) {
       console.error('Onboarding error in hook:', error);
-      const errorMessage = error instanceof Error ? error.message : "There was an error setting up your account. Please try again.";
+      
+      // Provide specific error messages for common issues
+      let errorMessage = "There was an error setting up your account. Please try again.";
+      
+      if (error instanceof Error) {
+        if (error.message.includes('RLS policy')) {
+          errorMessage = "Authentication error during setup. Please refresh the page and try again.";
+        } else if (error.message.includes('phone number')) {
+          errorMessage = error.message; // Use the specific phone validation error
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         title: "Onboarding Failed",
         description: errorMessage,
