@@ -14,7 +14,7 @@ interface PhoneValidationResult {
  * Simple E.164 normalization for server-side use
  * Handles common phone number formats with forgiving validation
  */
-export function normalizePhoneNumber(input: string, defaultCountry = 'GB'): PhoneValidationResult {
+export function normalizePhoneNumber(input: string, defaultCountry?: string): PhoneValidationResult {
   const originalInput = input.trim();
   
   if (!originalInput) {

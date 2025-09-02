@@ -8,12 +8,12 @@ export interface PhoneValidationResult {
 }
 
 /**
- * Normalize a phone number to E.164 format with GB as default country
- * Handles common UK input formats and artifacts
+ * Normalize a phone number to E.164 format
+ * Handles common international input formats and artifacts
  */
 export function normalizePhoneNumber(
   input: string, 
-  defaultCountry: CountryCode = 'GB'
+  defaultCountry?: CountryCode
 ): PhoneValidationResult {
   const originalInput = input.trim();
   
@@ -35,7 +35,9 @@ export function normalizePhoneNumber(
       // Handle 0044 prefix
       .replace(/^0044/, '+44')
       // Handle leading 0 for UK numbers (07700... -> +447700...)
-      .replace(/^0([1-9])/, `+44$1`);
+      .replace(/^0([1-9])/, `+44$1`)
+      // Handle US numbers without country code (415... -> +1415...)
+      .replace(/^([2-9][0-9]{9})$/, '+1$1');
 
     const phoneNumber = parsePhoneNumberFromString(cleanedInput, defaultCountry);
     
@@ -103,7 +105,7 @@ export async function hashPhoneNumber(e164: string): Promise<string> {
  */
 export function validatePhoneNumbers(
   phones: string[], 
-  defaultCountry: CountryCode = 'GB'
+  defaultCountry?: CountryCode
 ): { valid: PhoneValidationResult[]; invalid: PhoneValidationResult[]; duplicates: string[] } {
   const results = phones.map(phone => normalizePhoneNumber(phone, defaultCountry));
   
