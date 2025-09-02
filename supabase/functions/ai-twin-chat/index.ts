@@ -306,6 +306,16 @@ serve(async (req) => {
     const networkId = Deno.env.get('NEXT_PUBLIC_NETWORK_ID') || "x_prifina";
     const region = Deno.env.get('MY_REGION') || "us-east-1";
     
+    // Calculate timezone info exactly like frontend
+    const now = new Date();
+    const january = new Date(now.getFullYear(), 0, 1);
+    const dst = now.getTimezoneOffset() < january.getTimezoneOffset();
+    const offsetMinutes = now.getTimezoneOffset();
+    const hours = Math.floor(Math.abs(offsetMinutes) / 60);
+    const minutes = Math.abs(offsetMinutes) % 60;
+    const sign = offsetMinutes > 0 ? "-" : "+";
+    const gmtOffset = `GMT${sign}${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+    
     if (!supabaseUrl || !serviceKey) {
       console.error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured - returning fallback');
       const fallbackResponse = "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
@@ -323,13 +333,14 @@ serve(async (req) => {
     const userId = "production-physiotherapy";
     const knowledgebaseId = "3b5e8136-2945-4cb9-b611-fff01f9708e8";
     
-    // Enhance statement with context to match frontend approach
-    const enhancedStatement = systemContext 
-      ? `Context: ${systemContext}\n\nUser: ${message}`
-      : message;
+    // Generate session ID for this conversation (use seat_id as base)
+    const sessionId = `seat_${seat_id}`;
+    
+    // Use clean message without context prepending (match frontend approach)
+    const cleanStatement = message;
 
-    // Validate payload before sending (use enhanced statement)
-    const validationErrors = validateMiddlewarePayload(userId, knowledgebaseId, enhancedStatement);
+    // Validate payload before sending (use clean statement)
+    const validationErrors = validateMiddlewarePayload(userId, knowledgebaseId, cleanStatement);
     if (validationErrors.length > 0) {
       console.error(`Payload validation failed [${requestId}]:`, validationErrors);
       return new Response(JSON.stringify({ 
@@ -342,24 +353,30 @@ serve(async (req) => {
       });
     }
 
-    // Build payload for middleware-api matching frontend structure exactly
+    // Build payload for middleware-api matching frontend structure EXACTLY
     const payload = {
+      statement: cleanStatement,            // Clean statement without context prepending
       knowledgebaseId,
+      scoreLimit: 0.5,                     // Match frontend default
       userId,
-      statement: enhancedStatement,
-      stream: true,                 // Enable streaming to match frontend
-      model: 'gpt-4o-mini',
-      scoreLimit: 0.5,             // Match frontend default
-      debug: false,                // Consistent debug setting
-      msgIdx: 1,                   // Start at 1 for WhatsApp conversations
-      requestId,
-      timeInfo: {                  // Match frontend timeInfo structure
-        currentTime: new Date().toISOString(),
-        dst: false,
-        gmtOffset: "GMT+00:00"
+      requestId: crypto.randomUUID(),      // Generate fresh UUID like frontend
+      debug: false,                        // Match frontend debug setting
+      userLanguage: "English",             // Match frontend
+      stream: true,                        // Enable streaming like frontend
+      msgIdx: 0,                          // Match frontend (0-based indexing)
+      sessionId,                          // Use seat-based session ID
+      networkId,                          // From environment
+      appId,                              // From environment
+      localize: {                         // Match frontend 'localize' structure exactly
+        locale: "en-US",
+        timeZone: "UTC",                  // Could be enhanced later with real timezone
+        offset: offsetMinutes,
+        currentTime: now.toISOString(),
+        dst,
+        gmtOffset,
       },
-      options: {},
-      environment: "prod"
+      options: {},                        // Match frontend
+      environment: "prod"                 // Match frontend
     };
 
     if (IS_DEBUG) {
@@ -368,14 +385,19 @@ serve(async (req) => {
         knowledgebaseId: payload.knowledgebaseId,
         statementLength: payload.statement.length,
         stream: payload.stream,
-        scoreLimit: payload.scoreLimit
+        scoreLimit: payload.scoreLimit,
+        sessionId: payload.sessionId,
+        msgIdx: payload.msgIdx,
+        networkId: payload.networkId,
+        appId: payload.appId
       });
     } else {
       console.log(`Calling middleware-api [${requestId}] with:`, {
         userId: !!payload.userId,
         knowledgebaseId: !!payload.knowledgebaseId,
         statementLength: payload.statement.length,
-        stream: payload.stream
+        stream: payload.stream,
+        sessionId: !!payload.sessionId
       });
     }
 
