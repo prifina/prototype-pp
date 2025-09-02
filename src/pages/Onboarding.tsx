@@ -64,6 +64,7 @@ export const Onboarding = () => {
           <OnboardingForm 
             productionName={productionData?.name || 'Production'}
             onSubmit={handleFormComplete}
+            initialData={formData || undefined}
           />
         );
       

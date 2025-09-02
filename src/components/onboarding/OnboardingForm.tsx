@@ -18,6 +18,7 @@ import { OnboardingFormData } from '@/types/database';
 interface OnboardingFormProps {
   productionName: string;
   onSubmit: (data: OnboardingFormData) => void;
+  initialData?: Partial<OnboardingFormData>;
 }
 
 const formSchema = z.object({
@@ -55,7 +56,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, onSubmit }) => {
+export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, onSubmit, initialData }) => {
   const [customAllergy, setCustomAllergy] = React.useState('');
   const [customIntolerance, setCustomIntolerance] = React.useState('');
   const [customDietPref, setCustomDietPref] = React.useState('');
@@ -63,25 +64,25 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: '',
-      role: '',
+      name: initialData?.name || '',
+      role: initialData?.role || '',
       show_name: productionName,
-      tour_or_resident: 'tour',
-      phone_number: '',
-      sleep_environment: 'hotel',
-      noise_level: 'moderate',
-      light_control: 'good',
-      sleep_notes: '',
-      allergies: [],
-      intolerances: [],
-      dietary_preferences: [],
-      food_notes: '',
-      injuries_notes: '',
-      goals: '',
-      privacy_policy: false,
-      terms_of_service: false,
-      whatsapp_opt_in: false,
-      data_processing: false,
+      tour_or_resident: initialData?.tour_or_resident || 'tour',
+      phone_number: initialData?.phone_number || '',
+      sleep_environment: initialData?.sleep_environment || 'hotel',
+      noise_level: initialData?.noise_level || 'moderate',
+      light_control: initialData?.light_control || 'good',
+      sleep_notes: initialData?.sleep_notes || '',
+      allergies: initialData?.allergies || [],
+      intolerances: initialData?.intolerances || [],
+      dietary_preferences: initialData?.dietary_preferences || [],
+      food_notes: initialData?.food_notes || '',
+      injuries_notes: initialData?.injuries_notes || '',
+      goals: initialData?.goals || '',
+      privacy_policy: initialData?.privacy_policy || false,
+      terms_of_service: initialData?.terms_of_service || false,
+      whatsapp_opt_in: initialData?.whatsapp_opt_in || false,
+      data_processing: initialData?.data_processing || false,
     },
   });
 
