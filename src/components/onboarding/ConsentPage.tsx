@@ -8,7 +8,7 @@ import { OnboardingFormData } from '@/types/database';
 
 interface ConsentPageProps {
   formData: OnboardingFormData;
-  onAccept: () => void;
+  onAccept: (consents: { privacy_policy: boolean; terms_of_service: boolean; data_processing: boolean }) => void;
   onBack: () => void;
 }
 
@@ -141,7 +141,7 @@ export const ConsentPage: React.FC<ConsentPageProps> = ({
             Back to Form
           </Button>
           <Button 
-            onClick={onAccept} 
+            onClick={() => onAccept(consents)} 
             disabled={!allConsentsGiven}
             className="flex-1"
           >

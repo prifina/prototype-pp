@@ -36,10 +36,16 @@ export const Onboarding = () => {
     setCurrentStep('consent');
   };
 
-  const handleConsentComplete = async () => {
+  const handleConsentComplete = async (consents: { privacy_policy: boolean; terms_of_service: boolean; data_processing: boolean }) => {
     if (!productionData || !formData) return;
     
-    const result = await submitOnboarding(productionData.id, formData);
+    // Merge consent data with form data
+    const completeFormData = {
+      ...formData,
+      ...consents
+    };
+    
+    const result = await submitOnboarding(productionData.id, completeFormData);
     if (result) {
       setOnboardingResult(result);
       setCurrentStep('confirmation');
