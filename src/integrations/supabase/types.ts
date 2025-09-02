@@ -134,7 +134,7 @@ export type Database = {
           sleep_environment: Json | null
           tour_or_resident: string | null
           updated_at: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           additional_notes?: string | null
@@ -152,7 +152,7 @@ export type Database = {
           sleep_environment?: Json | null
           tour_or_resident?: string | null
           updated_at?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           additional_notes?: string | null
@@ -170,7 +170,7 @@ export type Database = {
           sleep_environment?: Json | null
           tour_or_resident?: string | null
           updated_at?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
