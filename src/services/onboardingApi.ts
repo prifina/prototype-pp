@@ -1,5 +1,6 @@
 // Onboarding API service for Production Physio system
 import { supabase } from '@/integrations/supabase/client';
+import { unauthenticatedSupabase } from './unauthenticatedSupabase';
 import { OnboardingFormData, OnboardingResponse } from '@/types/database';
 import { showApi } from './showApi';
 import { seatApi } from './seatApi';
@@ -138,7 +139,7 @@ export const onboardingApi = {
       
       let profile = null;
       
-      const { data: profileResult, error: profileError } = await supabase
+      const { data: profileResult, error: profileError } = await unauthenticatedSupabase
         .from('profiles')
         .insert(profileData)
         .select()
@@ -157,7 +158,7 @@ export const onboardingApi = {
           await this.ensureUnauthenticatedState();
           
           // Retry profile creation once
-          const { data: retryProfile, error: retryError } = await supabase
+          const { data: retryProfile, error: retryError } = await unauthenticatedSupabase
             .from('profiles')
             .insert({ ...profileData, user_id: null })
             .select()
@@ -179,9 +180,10 @@ export const onboardingApi = {
       
       console.log('Onboarding API - Profile created successfully (unauthenticated):', profile);
 
-      // STEP 6: Update seat to bind it to the profile and activate it
-      console.log('Onboarding API - Updating seat:', matchingSeat.id, 'with profile:', profile.id);
-      const { error: seatUpdateError } = await supabase
+      // STEP 6: Update seat to be active and linked to the new profile
+      console.log('Onboarding API - Updating seat to active status');
+      
+      const { error: seatUpdateError } = await unauthenticatedSupabase
         .from('seats')
         .update({
           profile_id: profile.id,

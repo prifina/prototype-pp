@@ -1,3 +1,4 @@
+import { unauthenticatedSupabase } from './unauthenticatedSupabase';
 import { supabase } from '@/integrations/supabase/client';
 import { Seat, SeatStatus } from '@/types/database';
 import { ProcessedCsvRow } from '@/utils/csvImport';
@@ -93,7 +94,7 @@ export const seatApi = {
         return null;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await unauthenticatedSupabase
         .from('seats')
         .select('*')
         .eq('show_id', showId)
