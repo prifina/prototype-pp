@@ -16,6 +16,7 @@ export function normalizePhoneNumber(
   defaultCountry?: CountryCode
 ): PhoneValidationResult {
   const originalInput = input.trim();
+  console.log('Phone normalization - Original input:', originalInput);
   
   if (!originalInput) {
     return {
@@ -41,9 +42,13 @@ export function normalizePhoneNumber(
       // Handle US numbers without country code - 10 digits (4155551234 -> +14155551234)
       .replace(/^([2-9][0-9]{9})$/, '+1$1');
 
+    console.log('Phone normalization - After cleaning:', cleanedInput);
+
     const phoneNumber = parsePhoneNumberFromString(cleanedInput, defaultCountry);
+    console.log('Phone normalization - Parsed phone:', phoneNumber?.number, 'Valid:', phoneNumber?.isValid());
     
     if (!phoneNumber || !phoneNumber.isValid()) {
+      console.log('Phone normalization - Failed validation for:', cleanedInput);
       return {
         isValid: false,
         originalInput,
@@ -51,6 +56,7 @@ export function normalizePhoneNumber(
       };
     }
 
+    console.log('Phone normalization - Success! E164:', phoneNumber.number);
     return {
       isValid: true,
       e164: phoneNumber.number,

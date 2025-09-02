@@ -34,16 +34,20 @@ export const useOnboarding = () => {
   ): Promise<OnboardingResponse | null> => {
     setIsLoading(true);
     try {
+      console.log('Starting onboarding for phone:', formData.phone_number);
       const result = await onboardingApi.submitOnboarding(productionId, formData);
+      console.log('Onboarding successful:', result);
       toast({
         title: "Onboarding Complete!",
         description: "Your AI Twin access has been set up successfully.",
       });
       return result;
     } catch (error) {
+      console.error('Onboarding error in hook:', error);
+      const errorMessage = error instanceof Error ? error.message : "There was an error setting up your account. Please try again.";
       toast({
         title: "Onboarding Failed",
-        description: "There was an error setting up your account. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
       return null;

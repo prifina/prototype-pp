@@ -45,16 +45,21 @@ export const onboardingApi = {
     formData: OnboardingFormData
   ): Promise<OnboardingResponse> {
     try {
+      console.log('Onboarding API - Starting submission for:', { showId, phone: formData.phone_number });
+      
       // Step 1: Validate phone number format
       const phoneResult = normalizePhoneNumber(formData.phone_number);
+      console.log('Onboarding API - Phone validation result:', phoneResult);
       if (!phoneResult.isValid) {
-        throw new Error('Invalid phone number format. Please enter a valid UK mobile number.');
+        throw new Error(`Invalid phone number format: ${phoneResult.error}. Please enter a valid mobile number.`);
       }
 
       // Step 2: Find matching seat for this phone in this show
+      console.log('Onboarding API - Looking for seat with phone:', phoneResult.e164);
       const matchingSeat = await seatApi.findSeatByPhone(showId, formData.phone_number);
+      console.log('Onboarding API - Seat lookup result:', matchingSeat);
       if (!matchingSeat) {
-        throw new Error(`This number isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
+        throw new Error(`This number (${phoneResult.e164}) isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
       }
 
       // Step 3: Generate WhatsApp link and QR code pointing to Twilio sandbox
@@ -64,47 +69,55 @@ export const onboardingApi = {
       // Step 4: Create profile with form data
       // Generate a temporary user_id that will be linked during authentication
       const tempUserId = crypto.randomUUID();
+      console.log('Onboarding API - Creating profile with temp user ID:', tempUserId);
+      
+      const profileData = {
+        user_id: tempUserId,
+        first_name: formData.name.split(' ')[0] || formData.name,
+        last_name: formData.name.split(' ').slice(1).join(' ') || '',
+        phone_number: phoneResult.e164,
+        show_id: showId,
+        tour_or_resident: formData.tour_or_resident,
+        sleep_environment: {
+          environment: formData.sleep_environment,
+          noise_level: formData.noise_level,
+          light_control: formData.light_control,
+          notes: formData.sleep_notes
+        },
+        dietary_info: {
+          allergies: formData.allergies || [],
+          intolerances: formData.intolerances || [],
+          dietary_preferences: formData.dietary_preferences || [],
+          notes: formData.food_notes
+        },
+        additional_notes: formData.injuries_notes,
+        health_goals: formData.goals ? { goals: formData.goals } : {},
+        consent_data: {
+          privacy_policy: formData.privacy_policy,
+          terms_of_service: formData.terms_of_service,
+          whatsapp_opt_in: formData.whatsapp_opt_in,
+          data_processing: formData.data_processing,
+          consented_at: new Date().toISOString()
+        }
+      };
+      
+      console.log('Onboarding API - Profile data to insert:', profileData);
       
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .insert({
-          user_id: tempUserId,
-          first_name: formData.name.split(' ')[0] || formData.name,
-          last_name: formData.name.split(' ').slice(1).join(' ') || '',
-          phone_number: phoneResult.e164,
-          show_id: showId,
-          tour_or_resident: formData.tour_or_resident,
-          sleep_environment: {
-            environment: formData.sleep_environment,
-            noise_level: formData.noise_level,
-            light_control: formData.light_control,
-            notes: formData.sleep_notes
-          },
-          dietary_info: {
-            allergies: formData.allergies || [],
-            intolerances: formData.intolerances || [],
-            dietary_preferences: formData.dietary_preferences || [],
-            notes: formData.food_notes
-          },
-          additional_notes: formData.injuries_notes,
-          health_goals: formData.goals ? { goals: formData.goals } : {},
-          consent_data: {
-            privacy_policy: formData.privacy_policy,
-            terms_of_service: formData.terms_of_service,
-            whatsapp_opt_in: formData.whatsapp_opt_in,
-            data_processing: formData.data_processing,
-            consented_at: new Date().toISOString()
-          }
-        })
+        .insert(profileData)
         .select()
         .single();
 
       if (profileError) {
-        console.error('Profile creation error:', profileError);
-        throw new Error('Failed to create profile. Please try again.');
+        console.error('Onboarding API - Profile creation error:', profileError);
+        throw new Error(`Failed to create profile: ${profileError.message}`);
       }
+      
+      console.log('Onboarding API - Profile created successfully:', profile);
 
       // Step 5: Update seat to bind it to the profile and activate it
+      console.log('Onboarding API - Updating seat:', matchingSeat.id, 'with profile:', profile.id);
       const { error: seatUpdateError } = await supabase
         .from('seats')
         .update({
@@ -116,9 +129,11 @@ export const onboardingApi = {
         .eq('id', matchingSeat.id);
 
       if (seatUpdateError) {
-        console.error('Seat update error:', seatUpdateError);
-        throw new Error('Failed to activate seat. Please contact support.');
+        console.error('Onboarding API - Seat update error:', seatUpdateError);
+        throw new Error(`Failed to activate seat: ${seatUpdateError.message}`);
       }
+      
+      console.log('Onboarding API - Seat updated successfully');
 
       console.log('Onboarding completed successfully:', {
         showId,
