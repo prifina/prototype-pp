@@ -4,12 +4,11 @@ import { useOnboarding } from '@/hooks/useOnboarding';
 import { PasscodeGate } from '@/components/onboarding/PasscodeGate';
 import { IntroExpectations } from '@/components/onboarding/IntroExpectations';
 import { OnboardingForm } from '@/components/onboarding/OnboardingForm';
-import { ConsentPage } from '@/components/onboarding/ConsentPage';
 import { ConfirmationPage } from '@/components/onboarding/ConfirmationPage';
 import { OnboardingFormData, OnboardingResponse } from '@/types/database';
 import logoImage from '@/assets/production-physiotherapy-logo.png';
 
-type OnboardingStep = 'passcode' | 'intro' | 'form' | 'consent' | 'confirmation';
+type OnboardingStep = 'passcode' | 'intro' | 'form' | 'confirmation';
 
 export const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('passcode');
@@ -31,21 +30,11 @@ export const Onboarding = () => {
     setCurrentStep('form');
   };
 
-  const handleFormComplete = (data: OnboardingFormData) => {
+  const handleFormComplete = async (data: OnboardingFormData) => {
+    if (!productionData) return;
+    
     setFormData(data);
-    setCurrentStep('consent');
-  };
-
-  const handleConsentComplete = async (consents: { privacy_policy: boolean; terms_of_service: boolean; data_processing: boolean }) => {
-    if (!productionData || !formData) return;
-    
-    // Merge consent data with form data
-    const completeFormData = {
-      ...formData,
-      ...consents
-    };
-    
-    const result = await submitOnboarding(productionData.id, completeFormData);
+    const result = await submitOnboarding(productionData.id, data);
     if (result) {
       setOnboardingResult(result);
       setCurrentStep('confirmation');
@@ -71,15 +60,6 @@ export const Onboarding = () => {
             productionName={productionData?.name || 'Production'}
             onSubmit={handleFormComplete}
             initialData={formData || undefined}
-          />
-        );
-      
-      case 'consent':
-        return (
-          <ConsentPage 
-            formData={formData!}
-            onAccept={handleConsentComplete}
-            onBack={() => setCurrentStep('form')}
           />
         );
       
@@ -118,10 +98,9 @@ export const Onboarding = () => {
           <p className="text-muted-foreground mt-2">
             Your Production has seen the value and also believe that this could be a game changing tool for how our Performing Athletes are cared for.
           </p>
-          <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground mt-4">
-              <div className={`w-3 h-3 rounded-full ${['intro', 'form', 'consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
-              <div className={`w-3 h-3 rounded-full ${['form', 'consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
-              <div className={`w-3 h-3 rounded-full ${['consent', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
+            <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground mt-4">
+              <div className={`w-3 h-3 rounded-full ${['intro', 'form', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
+              <div className={`w-3 h-3 rounded-full ${['form', 'confirmation'].includes(currentStep) ? 'bg-primary' : 'bg-muted'}`} />
               <div className={`w-3 h-3 rounded-full ${currentStep === 'confirmation' ? 'bg-primary' : 'bg-muted'}`} />
             </div>
           </div>
