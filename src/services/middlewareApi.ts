@@ -73,32 +73,39 @@ export const middlewareApi = {
       }
 
       const payload = {
-        stream: true,
         statement: sanitized,
-        knowledgebaseId: params.knowledgebaseId,
-        scoreLimit: 0.3,
-        userId: params.userId,
+        knowledgebaseId: "3b5e8136-2945-4cb9-b611-fff01f9708e8",
+        scoreLimit: 0.5,
+        userId: "production-physiotherapy",
         requestId: uuidv4(),
-        debug: true,
+        debug: false,
         userLanguage: "English",
+        stream: true,
         msgIdx: 0,
         sessionId: params.sessionId,
-        networkId: envData.objOfEnvs.NEXT_PUBLIC_NETWORK_ID,
-        appId: envData.objOfEnvs.NEXT_PUBLIC_APP_ID,
+        networkId: "x_prifina",
+        appId: "speak-to",
         localize: {
-          locale: navigator["language"] || navigator["userLanguage"],
+          locale: "en-US",
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           offset: offsetMinutes,
           currentTime: now.toISOString(),
           dst,
           gmtOffset,
         },
+        options: {}
       };
 
       console.log("service/middleware", { params });
       const { data: data2, error } = await supabase.functions.invoke(
         "middleware-api",
-        { body: payload }
+        { 
+          body: {
+            endpoint: "v1/generate",
+            method: "POST",
+            body: payload
+          }
+        }
       );
 
       if (error) {

@@ -198,17 +198,21 @@ serve(async (req) => {
     
     console.log(JSON.stringify(logData, null, 2));
 
+    // Log outbound request details
+    console.log(JSON.stringify({ 
+      outKeys: Object.keys(body ?? {}), 
+      url, 
+      method 
+    }, null, 2));
+
     const upstream = await fetchWithRetry(url, opts);
     
-    // Capture upstream error details for debugging
-    const respHeaders = Object.fromEntries(upstream.headers.entries());
+    // Log upstream response details  
     const text = await upstream.text();
     console.log(JSON.stringify({
-      requestId,
       url,
       status: upstream.status,
-      respHeaders,
-      bodyPreview: text.slice(0, 4000)
+      bodyPreview: text.slice(0, 800)
     }, null, 2));
     
     return new Response(text, {
