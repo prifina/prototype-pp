@@ -79,7 +79,7 @@ export const seatApi = {
   },
 
   /**
-   * Find seat by phone number for onboarding validation - searches regardless of status
+   * Find seat by phone number for onboarding validation - ignores revoked seats
    */
   async findSeatByPhone(showId: string, phoneNumber: string): Promise<Seat | null> {
     console.log('Seat API - Looking for seat with phone:', phoneNumber, 'in show:', showId);
@@ -98,6 +98,7 @@ export const seatApi = {
         .select('*')
         .eq('show_id', showId)
         .eq('phone_number', phoneResult.e164)
+        .neq('status', 'revoked')
         .maybeSingle();
 
       if (error) {
