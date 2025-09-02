@@ -199,7 +199,7 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ productionName, 
                         />
                       </FormControl>
                       <FormDescription className="text-sm">
-                        Enter your UK mobile number. This must match your pre-registered number.
+                        Enter your mobile number. This must match your pre-registered number.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

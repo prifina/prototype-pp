@@ -36,7 +36,9 @@ export function normalizePhoneNumber(
       .replace(/^0044/, '+44')
       // Handle leading 0 for UK numbers (07700... -> +447700...)
       .replace(/^0([1-9])/, `+44$1`)
-      // Handle US numbers without country code (415... -> +1415...)
+      // Handle US numbers - 11 digits starting with 1 (14155551234 -> +14155551234)
+      .replace(/^(1[2-9][0-9]{9})$/, '+$1')
+      // Handle US numbers without country code - 10 digits (4155551234 -> +14155551234)
       .replace(/^([2-9][0-9]{9})$/, '+1$1');
 
     const phoneNumber = parsePhoneNumberFromString(cleanedInput, defaultCountry);
