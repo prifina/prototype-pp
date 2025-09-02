@@ -207,7 +207,21 @@ serve(async (req) => {
 
     const upstream = await fetchWithRetry(url, opts);
     
-    // Log upstream response details  
+    // For streaming responses, return the stream directly
+    if (upstream.headers.get("content-type")?.includes("text/plain") || body?.stream) {
+      console.log(JSON.stringify({
+        url,
+        status: upstream.status,
+        streaming: true
+      }, null, 2));
+      
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: { ...cors, "content-type": upstream.headers.get("content-type") ?? "text/plain" }
+      });
+    }
+    
+    // For non-streaming responses, buffer and log
     const text = await upstream.text();
     console.log(JSON.stringify({
       url,

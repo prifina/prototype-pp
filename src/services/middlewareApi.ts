@@ -93,15 +93,16 @@ export const middlewareApi = {
           dst,
           gmtOffset,
         },
-        options: {}
+        options: {},
+        environment: "prod"
       };
 
       console.log("service/middleware", { params });
-      const { data: data2, error } = await supabase.functions.invoke(
+        const { data: data2, error } = await supabase.functions.invoke(
         "middleware-api",
         { 
           body: {
-            endpoint: "v1/generate",
+            endpoint: "v2/generate",
             method: "POST",
             body: payload
           }
