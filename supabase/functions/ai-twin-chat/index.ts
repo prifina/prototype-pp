@@ -323,8 +323,13 @@ serve(async (req) => {
     const userId = "production-physiotherapy";
     const knowledgebaseId = "3b5e8136-2945-4cb9-b611-fff01f9708e8";
     
-    // Validate payload before sending
-    const validationErrors = validateMiddlewarePayload(userId, knowledgebaseId, message);
+    // Enhance statement with context to match frontend approach
+    const enhancedStatement = systemContext 
+      ? `Context: ${systemContext}\n\nUser: ${message}`
+      : message;
+
+    // Validate payload before sending (use enhanced statement)
+    const validationErrors = validateMiddlewarePayload(userId, knowledgebaseId, enhancedStatement);
     if (validationErrors.length > 0) {
       console.error(`Payload validation failed [${requestId}]:`, validationErrors);
       return new Response(JSON.stringify({ 
@@ -337,24 +342,18 @@ serve(async (req) => {
       });
     }
 
-    // Build payload for middleware-api using statement + context format (no messages array)
+    // Build payload for middleware-api matching frontend structure exactly
     const payload = {
-      userId,
       knowledgebaseId,
-      statement: message,           // Clean user message
-      context: systemContext || "", // Always send context as string (empty string is OK)
-      stream: false,
-      scoreLimit: 0.3,
-      sessionId: `seat_${seat_id}`,
+      userId,
+      statement: enhancedStatement,
+      stream: true,                 // Enable streaming to match frontend
+      model: 'gpt-4o-mini',
+      scoreLimit: 0.5,             // Match frontend default
+      debug: false,                // Consistent debug setting
+      msgIdx: 1,                   // Start at 1 for WhatsApp conversations
       requestId,
-      userLanguage: "English",
-      msgIdx: 0,                    // Integer, 0 on first turn
-      networkId,
-      appId,
-      localize: {
-        locale: "en-US",
-        timeZone: "UTC",
-        offset: 0,
+      timeInfo: {                  // Match frontend timeInfo structure
         currentTime: new Date().toISOString(),
         dst: false,
         gmtOffset: "GMT+00:00"
@@ -368,15 +367,15 @@ serve(async (req) => {
         userId: payload.userId,
         knowledgebaseId: payload.knowledgebaseId,
         statementLength: payload.statement.length,
-        contextLength: payload.context.length,
-        sessionId: payload.sessionId
+        stream: payload.stream,
+        scoreLimit: payload.scoreLimit
       });
     } else {
       console.log(`Calling middleware-api [${requestId}] with:`, {
         userId: !!payload.userId,
         knowledgebaseId: !!payload.knowledgebaseId,
         statementLength: payload.statement.length,
-        contextLength: payload.context.length
+        stream: payload.stream
       });
     }
 
