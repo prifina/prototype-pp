@@ -69,7 +69,7 @@ export const onboardingApi = {
       const matchingSeat = await seatApi.findSeatByPhone(showId, formData.phone_number);
       console.log('Onboarding API - Seat lookup result:', matchingSeat);
       if (!matchingSeat) {
-        throw new Error(`This number (${phoneResult.e164}) isn't on the access list for this show. Please check with your company manager or email support@productionphysio.com.`);
+        throw new Error(`This number (${phoneResult.e164}) isn't on the access list for this show. Please check with your company manager or email support@productionphysiotherapy.com.`);
       }
 
       // STEP 4: Generate WhatsApp link and QR code

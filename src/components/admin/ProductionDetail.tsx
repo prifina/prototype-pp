@@ -7,9 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { SeatManagement } from './SeatManagement';
 import { ProfileManagement } from './ProfileManagement';
 import { Analytics } from './Analytics';
-import { QRPackGenerator } from './QRPackGenerator';
 import { CSVImport } from './CSVImport';
-import { AuditLog } from './AuditLog';
 import { showApi } from '@/services/showApi';
 import { Show } from '@/types/database';
 import { useToast } from '@/hooks/use-toast';
@@ -194,7 +192,7 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
 
       {/* Management Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="seats" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Seats
@@ -210,14 +208,6 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
           <TabsTrigger value="import" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Import
-          </TabsTrigger>
-          <TabsTrigger value="qr" className="flex items-center gap-2">
-            <Package className="h-4 w-4" />
-            QR Packs
-          </TabsTrigger>
-          <TabsTrigger value="audit" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Audit Log
           </TabsTrigger>
         </TabsList>
 
@@ -281,36 +271,6 @@ export const ProductionDetail = ({ productionId, onBack }: ProductionDetailProps
           </Card>
         </TabsContent>
 
-        <TabsContent value="qr" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>QR Pack Generator</CardTitle>
-              <CardDescription>
-                Generate QR code packages for {production.show_name} seat distribution
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <QRPackGenerator 
-                seats={[]} // This will need to be populated with actual seat data
-                showName={production.show_name}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="audit" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Audit Log</CardTitle>
-              <CardDescription>
-                View audit trail for {production.show_name}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AuditLog showId={productionId} />
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
     </div>
   );

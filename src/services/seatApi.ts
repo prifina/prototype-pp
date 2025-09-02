@@ -79,10 +79,10 @@ export const seatApi = {
   },
 
   /**
-   * Find seat by phone number for onboarding validation - tries multiple normalized formats
+   * Find seat by phone number for onboarding validation - searches regardless of status
    */
   async findSeatByPhone(showId: string, phoneNumber: string): Promise<Seat | null> {
-    console.log('Seat API - Looking for seat with phone:', phoneNumber);
+    console.log('Seat API - Looking for seat with phone:', phoneNumber, 'in show:', showId);
     
     try {
       const phoneResult = normalizePhoneNumber(phoneNumber);
@@ -98,7 +98,6 @@ export const seatApi = {
         .select('*')
         .eq('show_id', showId)
         .eq('phone_number', phoneResult.e164)
-        .eq('status', 'pending')
         .maybeSingle();
 
       if (error) {
