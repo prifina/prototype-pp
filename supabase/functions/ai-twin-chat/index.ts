@@ -358,7 +358,9 @@ serve(async (req) => {
         currentTime: new Date().toISOString(),
         dst: false,
         gmtOffset: "GMT+00:00"
-      }
+      },
+      options: {},
+      environment: "prod"
     };
 
     if (IS_DEBUG) {
@@ -389,7 +391,7 @@ serve(async (req) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        endpoint: 'v1/generate',
+        endpoint: 'v2/generate',
         method: 'POST',
         body: payload
       })
