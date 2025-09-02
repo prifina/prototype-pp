@@ -79,12 +79,17 @@ export const seatApi = {
   },
 
   /**
-   * Find seat by phone number for onboarding validation
+   * Find seat by phone number for onboarding validation - tries multiple normalized formats
    */
   async findSeatByPhone(showId: string, phoneNumber: string): Promise<Seat | null> {
+    console.log('Seat API - Looking for seat with phone:', phoneNumber);
+    
     try {
       const phoneResult = normalizePhoneNumber(phoneNumber);
+      console.log('Seat API - Normalized phone result:', phoneResult);
+      
       if (!phoneResult.isValid) {
+        console.log('Seat API - Invalid phone number, cannot search');
         return null;
       }
 
@@ -97,13 +102,14 @@ export const seatApi = {
         .maybeSingle();
 
       if (error) {
-        console.error('Seat lookup error:', error);
+        console.error('Seat API - Error finding seat:', error);
         return null;
       }
 
+      console.log('Seat API - Seat lookup result:', data);
       return data as Seat | null;
     } catch (error) {
-      console.error('Seat lookup error:', error);
+      console.error('Seat API - Seat lookup error:', error);
       return null;
     }
   },

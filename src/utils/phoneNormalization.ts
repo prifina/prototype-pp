@@ -1,5 +1,3 @@
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js';
-
 export interface PhoneValidationResult {
   isValid: boolean;
   e164?: string;
@@ -8,13 +6,9 @@ export interface PhoneValidationResult {
 }
 
 /**
- * Normalize a phone number to E.164 format
- * Handles common international input formats and artifacts
+ * Super simple phone normalization - strips everything except digits and adds country codes
  */
-export function normalizePhoneNumber(
-  input: string, 
-  defaultCountry?: CountryCode
-): PhoneValidationResult {
+export function normalizePhoneNumber(input: string): PhoneValidationResult {
   const originalInput = input.trim();
   console.log('Phone normalization - Original input:', originalInput);
   
@@ -26,62 +20,77 @@ export function normalizePhoneNumber(
     };
   }
 
-  try {
-    // Clean common artifacts before parsing
-    let cleanedInput = originalInput
-      // Remove spaces and hyphens
-      .replace(/[\s\-]/g, '')
-      // Remove the (0) trunk hint in +44 (0)7... format
-      .replace(/^\+44\(0\)/, '+44')
-      // Handle 0044 prefix
-      .replace(/^0044/, '+44')
-      // Handle leading 0 for UK numbers (07700... -> +447700...)
-      .replace(/^0([1-9])/, `+44$1`)
-      // Handle US numbers - 11 digits starting with 1 (14155551234 -> +14155551234)
-      .replace(/^(1[2-9][0-9]{9})$/, '+$1')
-      // Handle US numbers without country code - 10 digits (4155551234 -> +14155551234)
-      .replace(/^([2-9][0-9]{9})$/, '+1$1');
+  // Strip everything except digits and + sign
+  let digitsOnly = originalInput.replace(/[^\d+]/g, '');
+  console.log('Phone normalization - Digits only:', digitsOnly);
 
-    console.log('Phone normalization - After cleaning:', cleanedInput);
-
-    const phoneNumber = parsePhoneNumberFromString(cleanedInput, defaultCountry);
-    console.log('Phone normalization - Parsed phone:', phoneNumber?.number, 'Valid:', phoneNumber?.isValid());
-    
-    if (!phoneNumber || !phoneNumber.isValid()) {
-      console.log('Phone normalization - Failed validation for:', cleanedInput);
-      return {
-        isValid: false,
-        originalInput,
-        error: 'Invalid phone number format'
-      };
-    }
-
-    console.log('Phone normalization - Success! E164:', phoneNumber.number);
+  // If it already starts with +, validate and return
+  if (digitsOnly.startsWith('+')) {
+    console.log('Phone normalization - Already has +, using as-is:', digitsOnly);
     return {
       isValid: true,
-      e164: phoneNumber.number,
+      e164: digitsOnly,
       originalInput
     };
-    
-  } catch (error) {
+  }
+
+  // Remove any + signs that aren't at the start
+  digitsOnly = digitsOnly.replace(/\+/g, '');
+  
+  // Handle different number lengths
+  if (digitsOnly.length === 10) {
+    // 10 digits - assume US
+    const e164 = `+1${digitsOnly}`;
+    console.log('Phone normalization - 10 digits, adding +1:', e164);
     return {
-      isValid: false,
-      originalInput,
-      error: 'Unable to parse phone number'
+      isValid: true,
+      e164,
+      originalInput
+    };
+  } else if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+    // 11 digits starting with 1 - US with country code
+    const e164 = `+${digitsOnly}`;
+    console.log('Phone normalization - 11 digits with 1, adding +:', e164);
+    return {
+      isValid: true,
+      e164,
+      originalInput
+    };
+  } else if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+    // 11 digits starting with 0 - likely UK
+    const withoutLeadingZero = digitsOnly.substring(1);
+    const e164 = `+44${withoutLeadingZero}`;
+    console.log('Phone normalization - UK number, converting:', e164);
+    return {
+      isValid: true,
+      e164,
+      originalInput
+    };
+  } else if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+    // Other international numbers - add + and hope for the best
+    const e164 = `+${digitsOnly}`;
+    console.log('Phone normalization - International number:', e164);
+    return {
+      isValid: true,
+      e164,
+      originalInput
     };
   }
+
+  console.log('Phone normalization - Could not normalize:', digitsOnly);
+  return {
+    isValid: false,
+    originalInput,
+    error: `Could not normalize phone number with ${digitsOnly.length} digits: ${digitsOnly}`
+  };
 }
 
 /**
- * Format a phone number for display (e.g., +44 7700 900123)
+ * Format a phone number for display (basic formatting)
  */
 export function formatPhoneForDisplay(e164: string): string {
-  try {
-    const phoneNumber = parsePhoneNumberFromString(e164);
-    return phoneNumber?.formatInternational() || e164;
-  } catch {
-    return e164;
-  }
+  // Simple formatting - just return the E164 number
+  return e164;
 }
 
 /**
@@ -112,10 +121,9 @@ export async function hashPhoneNumber(e164: string): Promise<string> {
  * Validate multiple phone numbers from CSV import
  */
 export function validatePhoneNumbers(
-  phones: string[], 
-  defaultCountry?: CountryCode
+  phones: string[]
 ): { valid: PhoneValidationResult[]; invalid: PhoneValidationResult[]; duplicates: string[] } {
-  const results = phones.map(phone => normalizePhoneNumber(phone, defaultCountry));
+  const results = phones.map(phone => normalizePhoneNumber(phone));
   
   const valid = results.filter(r => r.isValid);
   const invalid = results.filter(r => !r.isValid);
