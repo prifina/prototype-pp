@@ -25,6 +25,37 @@ function generateWhatsAppLink(seatCode: string): string {
 
 export const onboardingApi = {
   /**
+   * Ensure clean unauthenticated state for onboarding
+   */
+  async ensureUnauthenticatedState(): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // If there's an authenticated user that's NOT a system admin, sign them out
+    if (user && !user.email?.endsWith('@productionphysio.com')) {
+      console.log('Onboarding API - Clearing authenticated session for clean onboarding');
+      await supabase.auth.signOut();
+      
+      // Wait for auth state to fully clear with retry mechanism
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        
+        if (!currentUser) {
+          console.log('Auth state successfully cleared');
+          return;
+        }
+        
+        attempts++;
+        console.log(`Waiting for auth state to clear... attempt ${attempts}/${maxAttempts}`);
+      }
+      
+      console.warn('Auth state may not be fully cleared, proceeding anyway');
+    }
+  },
+  /**
    * Verify show passcode - Updated to use new Show model
    */
   async verifyPasscode(passcode: string): Promise<{ id: string; name: string }> {
@@ -48,14 +79,7 @@ export const onboardingApi = {
       console.log('Onboarding API - Starting submission for:', { showId, phone: formData.phone_number });
       
       // STEP 1: Ensure clean unauthenticated state for onboarding
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // If there's an authenticated user that's NOT a system admin, sign them out
-      // This ensures clean onboarding state
-      if (user && !user.email?.endsWith('@productionphysio.com')) {
-        console.log('Onboarding API - Clearing authenticated session for clean onboarding');
-        await supabase.auth.signOut();
-      }
+      await this.ensureUnauthenticatedState();
       
       // STEP 2: Validate phone number format
       const phoneResult = normalizePhoneNumber(formData.phone_number);
@@ -80,7 +104,8 @@ export const onboardingApi = {
       console.log('Onboarding API - Creating profile for unauthenticated onboarding');
       
       const profileData = {
-        // NO user_id - will be NULL initially (allowed by RLS policy)
+        // Explicitly set user_id to null for unauthenticated onboarding
+        user_id: null,
         first_name: formData.name.split(' ')[0] || formData.name,
         last_name: formData.name.split(' ').slice(1).join(' ') || '',
         phone_number: phoneResult.e164,
@@ -111,7 +136,9 @@ export const onboardingApi = {
       
       console.log('Onboarding API - Profile data to insert (unauthenticated):', profileData);
       
-      const { data: profile, error: profileError } = await supabase
+      let profile = null;
+      
+      const { data: profileResult, error: profileError } = await supabase
         .from('profiles')
         .insert(profileData)
         .select()
@@ -120,8 +147,34 @@ export const onboardingApi = {
       if (profileError) {
         console.error('Onboarding API - Profile creation error:', profileError);
         // Enhanced error logging for debugging
-        console.error('Auth context during error:', await supabase.auth.getUser());
-        throw new Error(`Failed to create profile: ${profileError.message}`);
+        const authState = await supabase.auth.getUser();
+        console.error('Auth context during error:', authState);
+        console.error('Profile data attempted:', profileData);
+        
+        // If it's an RLS policy violation, try once more after ensuring clean auth state
+        if (profileError.message.includes('row-level security policy')) {
+          console.log('RLS policy violation detected, attempting to retry with clean auth state...');
+          await this.ensureUnauthenticatedState();
+          
+          // Retry profile creation once
+          const { data: retryProfile, error: retryError } = await supabase
+            .from('profiles')
+            .insert({ ...profileData, user_id: null })
+            .select()
+            .single();
+            
+          if (retryError) {
+            console.error('Retry also failed:', retryError);
+            throw new Error(`Failed to create profile after retry: ${retryError.message}`);
+          }
+          
+          console.log('Profile creation succeeded on retry');
+          profile = retryProfile;
+        } else {
+          throw new Error(`Failed to create profile: ${profileError.message}`);
+        }
+      } else {
+        profile = profileResult;
       }
       
       console.log('Onboarding API - Profile created successfully (unauthenticated):', profile);
