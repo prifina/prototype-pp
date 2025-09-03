@@ -1,5 +1,8 @@
 project_id = "fkvtnyvttgjiherassmn"
 
+[functions.onboard-user]
+verify_jwt = false
+
 [functions.test-middleware]
 verify_jwt = false
 

@@ -1,10 +1,7 @@
 // Onboarding API service for Production Physio system
 import { supabase } from '@/integrations/supabase/client';
-import { unauthenticatedSupabase } from './unauthenticatedSupabase';
 import { OnboardingFormData, OnboardingResponse } from '@/types/database';
 import { showApi } from './showApi';
-import { seatApi } from './seatApi';
-import { normalizePhoneNumber } from '@/utils/phoneNormalization';
 
 // Generate QR code for WhatsApp link
 function generateQRCodeURL(waLink: string): string {
@@ -26,38 +23,7 @@ function generateWhatsAppLink(seatCode: string): string {
 
 export const onboardingApi = {
   /**
-   * Ensure clean unauthenticated state for onboarding
-   */
-  async ensureUnauthenticatedState(): Promise<void> {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    // If there's an authenticated user that's NOT a system admin, sign them out
-    if (user && !user.email?.endsWith('@productionphysio.com')) {
-      console.log('Onboarding API - Clearing authenticated session for clean onboarding');
-      await supabase.auth.signOut();
-      
-      // Wait for auth state to fully clear with retry mechanism
-      let attempts = 0;
-      const maxAttempts = 10;
-      
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        
-        if (!currentUser) {
-          console.log('Auth state successfully cleared');
-          return;
-        }
-        
-        attempts++;
-        console.log(`Waiting for auth state to clear... attempt ${attempts}/${maxAttempts}`);
-      }
-      
-      console.warn('Auth state may not be fully cleared, proceeding anyway');
-    }
-  },
-  /**
-   * Verify show passcode - Updated to use new Show model
+   * Verify show passcode
    */
   async verifyPasscode(passcode: string): Promise<{ id: string; name: string }> {
     try {
@@ -70,142 +36,31 @@ export const onboardingApi = {
   },
 
   /**
-   * Submit onboarding form with phone validation against pre-loaded seats
+   * Submit onboarding form via Edge Function with service role permissions
    */
   async submitOnboarding(
     showId: string, 
     formData: OnboardingFormData
   ): Promise<OnboardingResponse> {
     try {
-      console.log('Onboarding API - Starting submission for:', { showId, phone: formData.phone_number });
+      console.log('Starting onboarding via edge function for phone:', formData.phone_number);
       
-      // STEP 1: Ensure clean unauthenticated state for onboarding
-      await this.ensureUnauthenticatedState();
-      
-      // STEP 2: Validate phone number format
-      const phoneResult = normalizePhoneNumber(formData.phone_number);
-      console.log('Onboarding API - Phone validation result:', phoneResult);
-      if (!phoneResult.isValid) {
-        throw new Error(`Invalid phone number format: ${phoneResult.error}. Please enter a valid mobile number.`);
+      // Call the edge function instead of direct database access
+      const { data, error } = await supabase.functions.invoke('onboard-user', {
+        body: { showId, formData }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to submit onboarding');
       }
 
-      // STEP 3: Find matching seat for this phone in this show
-      console.log('Onboarding API - Looking for seat with phone:', phoneResult.e164);
-      const matchingSeat = await seatApi.findSeatByPhone(showId, formData.phone_number);
-      console.log('Onboarding API - Seat lookup result:', matchingSeat);
-      if (!matchingSeat) {
-        throw new Error(`This number (${phoneResult.e164}) isn't on the access list for this show. Please check with your company manager or email support@productionphysiotherapy.com.`);
+      if (data.error) {
+        throw new Error(data.error);
       }
 
-      // STEP 4: Generate WhatsApp link and QR code
-      const waLink = generateWhatsAppLink(matchingSeat.seat_code);
-      const qrUrl = generateQRCodeURL(waLink);
-
-      // STEP 5: Create profile WITHOUT user_id (will be linked later during authentication)
-      console.log('Onboarding API - Creating profile for unauthenticated onboarding');
-      
-      const profileData = {
-        // Explicitly set user_id to null for unauthenticated onboarding
-        user_id: null,
-        first_name: formData.name.split(' ')[0] || formData.name,
-        last_name: formData.name.split(' ').slice(1).join(' ') || '',
-        phone_number: phoneResult.e164,
-        show_id: showId,
-        tour_or_resident: formData.tour_or_resident,
-        sleep_environment: {
-          environment: formData.sleep_environment,
-          noise_level: formData.noise_level,
-          light_control: formData.light_control,
-          notes: formData.sleep_notes
-        },
-        dietary_info: {
-          allergies: formData.allergies || [],
-          intolerances: formData.intolerances || [],
-          dietary_preferences: formData.dietary_preferences || [],
-          notes: formData.food_notes
-        },
-        additional_notes: formData.injuries_notes,
-        health_goals: formData.goals ? { goals: formData.goals } : {},
-        consent_data: {
-          privacy_policy: formData.privacy_policy,
-          terms_of_service: formData.terms_of_service,
-          whatsapp_opt_in: formData.whatsapp_opt_in,
-          data_processing: formData.data_processing,
-          consented_at: new Date().toISOString()
-        }
-      };
-      
-      console.log('Onboarding API - Profile data to insert (unauthenticated):', profileData);
-      
-      let profile = null;
-      
-      const { data: profileResult, error: profileError } = await unauthenticatedSupabase
-        .from('profiles')
-        .insert(profileData)
-        .select()
-        .single();
-
-      if (profileError) {
-        console.error('Onboarding API - Profile creation error:', profileError);
-        // Enhanced error logging for debugging
-        const authState = await supabase.auth.getUser();
-        console.error('Auth context during error:', authState);
-        console.error('Profile data attempted:', profileData);
-        
-        // If it's an RLS policy violation, try once more after ensuring clean auth state
-        if (profileError.message.includes('row-level security policy')) {
-          console.log('RLS policy violation detected, attempting to retry with clean auth state...');
-          await this.ensureUnauthenticatedState();
-          
-          // Retry profile creation once
-          const { data: retryProfile, error: retryError } = await unauthenticatedSupabase
-            .from('profiles')
-            .insert({ ...profileData, user_id: null })
-            .select()
-            .single();
-            
-          if (retryError) {
-            console.error('Retry also failed:', retryError);
-            throw new Error(`Failed to create profile after retry: ${retryError.message}`);
-          }
-          
-          console.log('Profile creation succeeded on retry');
-          profile = retryProfile;
-        } else {
-          throw new Error(`Failed to create profile: ${profileError.message}`);
-        }
-      } else {
-        profile = profileResult;
-      }
-      
-      console.log('Onboarding API - Profile created successfully (unauthenticated):', profile);
-
-      // STEP 6: Update seat to be active and linked to the new profile
-      console.log('Onboarding API - Updating seat to active status');
-      
-      const { error: seatUpdateError } = await unauthenticatedSupabase
-        .from('seats')
-        .update({
-          profile_id: profile.id,
-          profile_name: formData.name,
-          status: 'active',
-          bound_at: new Date().toISOString()
-        })
-        .eq('id', matchingSeat.id);
-
-      if (seatUpdateError) {
-        console.error('Onboarding API - Seat update error:', seatUpdateError);
-        throw new Error(`Failed to activate seat: ${seatUpdateError.message}`);
-      }
-      
-      console.log('Onboarding API - Onboarding completed successfully (unauthenticated flow)');
-
-      return {
-        seat_id: matchingSeat.id,
-        wa_link: waLink,
-        qr_url: qrUrl
-      };
-
+      console.log('Onboarding completed successfully via edge function');
+      return data;
     } catch (error) {
       console.error('Onboarding submission error:', error);
       throw error;
@@ -217,7 +72,6 @@ export const onboardingApi = {
    */
   async getSeatQR(seatId: string): Promise<string> {
     try {
-      // In full implementation, we would fetch actual seat code from database
       const mockQRUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&ecc=M&data=${encodeURIComponent('seat:SC-DEMO-12345678-X')}`;
       return mockQRUrl;
     } catch (error) {
@@ -231,25 +85,11 @@ export const onboardingApi = {
    */
   async getSeatLink(seatId: string): Promise<{ wa_link: string }> {
     try {
-      // In full implementation, we would fetch actual seat code from database
       const waLink = generateWhatsAppLink('SC-DEMO-12345678-X');
       return { wa_link: waLink };
     } catch (error) {
       console.error('WhatsApp link retrieval error:', error);
       throw error;
-    }
-  },
-
-  /**
-   * Development helper: Clear any admin sessions that might interfere with onboarding
-   */
-  async clearAdminSession(): Promise<void> {
-    if (process.env.NODE_ENV === 'development') {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && user.email?.endsWith('@productionphysio.com')) {
-        console.log('Dev Mode: Clearing admin session for clean onboarding test');
-        await supabase.auth.signOut();
-      }
     }
   }
 };
