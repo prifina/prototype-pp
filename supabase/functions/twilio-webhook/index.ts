@@ -462,102 +462,57 @@ serve(async (req) => {
     const aiResponse = await chatResponse.json();
     console.log('AI response received:', JSON.stringify(aiResponse, null, 2));
     
-    // Parse and clean AI streaming response
-    let cleanMessage = '';
-    const rawResponse = aiResponse.response || aiResponse.message || '';
+    // Extract the main response and any additional parts
+    const mainResponse = aiResponse.response || aiResponse.message || 'Sorry, I had trouble processing your message.';
+    const additionalParts = aiResponse.additional_parts || [];
     
-    console.log('Raw AI response format:', rawResponse);
-    
-    // Extract disclaimer if present at the start
-    const disclaimerMatch = rawResponse.match(/^([^\\n]*diagnose.*?lead\.)/);
-    const disclaimer = disclaimerMatch ? disclaimerMatch[1] : '';
-    
-    if (rawResponse.includes('text=')) {
-      // Parse streaming format with text= prefix (most common format)
-      // Example: "text=\ntext=Hello\ntext=!\ntext= How\ntext= can..."
-      const lines = rawResponse.split('\n');
-      let messageText = '';
-      
-      for (const line of lines) {
-        if (line.startsWith('text=') && !line.includes('text=stop')) {
-          let textPart = line.substring(5); // Remove 'text=' prefix
-          
-          // Skip empty text parts but preserve spaces
-          if (textPart !== undefined && textPart !== '' && textPart !== ';') {
-            try {
-              textPart = decodeURIComponent(textPart);
-            } catch (e) {
-              // If decoding fails, use as-is
-            }
-            messageText += textPart;
-          }
-        }
-      }
-      
-      cleanMessage = messageText.trim();
-    } else if (rawResponse.includes(';finish_reason=')) {
-      // Fallback: Parse format where tokens are separated by ;finish_reason=null
-      const tokens = rawResponse.split(';finish_reason=');
-      let messageText = '';
-      
-      for (let token of tokens) {
-        // Remove null/stop suffixes and clean the token
-        token = token.replace(/^null/, '').replace(/^stop$/, '');
-        
-        if (token && token.trim()) {
-          try {
-            token = decodeURIComponent(token);
-          } catch (e) {
-            // If decoding fails, use as-is
-          }
-          messageText += token;
-        }
-      }
-      
-      cleanMessage = messageText.trim();
-    } else {
-      // Raw response without streaming format
-      cleanMessage = rawResponse;
-    }
-    
-    // Add disclaimer if it was found and message doesn't already start with it
-    if (disclaimer && !cleanMessage.startsWith(disclaimer)) {
-      cleanMessage = disclaimer + '\n\n' + cleanMessage;
-    }
-    
-    console.log('Cleaned message before sending:', cleanMessage);
-    
-    // Handle message length limits for WhatsApp (1600 chars max)
-    if (cleanMessage.length > 1500) {
-      cleanMessage = cleanMessage.substring(0, 1450) + '... (message truncated)';
-    }
-    
-    if (!cleanMessage) {
-      cleanMessage = 'Sorry, I had trouble processing your message.';
-    }
-    
-    // Log AI response
+    // Log AI response (main part)
     console.log('Logging AI response to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
       phone_number: phoneForStorage,
       direction: 'outbound',
-      message_body: cleanMessage,
-      message_type: 'chat',
-      payload: {
-        raw_ai_response: rawResponse,
-        cleaned: true
-      }
+      message_body: mainResponse,
+      message_type: 'chat'
     });
 
-    // Send AI response back to user
+    // Send main response
     console.log('Sending AI response back to user...');
     await sendWhatsAppMessage(
       Deno.env.get('SUPABASE_URL') ?? '',
       req.headers.get('Authorization') ?? '',
       fromNumber,
-      { text: { body: cleanMessage } }
+      { text: { body: mainResponse } }
     );
+
+    // Send additional parts if the message was split
+    if (additionalParts.length > 0) {
+      console.log(`Sending ${additionalParts.length} additional message parts...`);
+      
+      for (const [index, part] of additionalParts.entries()) {
+        // Small delay between messages to ensure order
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Log additional part
+        await supabase.from('message_log').insert({
+          seat_id: activeSeat.id,
+          phone_number: phoneForStorage,
+          direction: 'outbound',
+          message_body: part,
+          message_type: 'chat'
+        });
+        
+        // Send additional part
+        await sendWhatsAppMessage(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          req.headers.get('Authorization') ?? '',
+          fromNumber,
+          { text: { body: part } }
+        );
+        
+        console.log(`Sent part ${index + 2} of ${additionalParts.length + 1}`);
+      }
+    }
 
     markProcessed(messageSid);
     return new Response('', { status: 200, headers: corsHeaders });
