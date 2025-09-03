@@ -58,8 +58,11 @@ serve(async (req) => {
 
     const { error } = await supabase
       .from('message_log')
-      .update(updateData)
-      .eq('provider_message_id', messageSid);
+      .update({
+        status: messageStatus,
+        payload: updateData.payload
+      })
+      .eq('message_sid', messageSid);
 
     if (error) {
       console.error('Failed to update message status:', error);

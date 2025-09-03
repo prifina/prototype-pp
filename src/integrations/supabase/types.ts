@@ -76,6 +76,7 @@ export type Database = {
           message_sid: string | null
           message_type: string | null
           metadata: Json | null
+          payload: Json | null
           phone_number: string
           seat_id: string | null
           status: string | null
@@ -89,6 +90,7 @@ export type Database = {
           message_sid?: string | null
           message_type?: string | null
           metadata?: Json | null
+          payload?: Json | null
           phone_number: string
           seat_id?: string | null
           status?: string | null
@@ -102,6 +104,7 @@ export type Database = {
           message_sid?: string | null
           message_type?: string | null
           metadata?: Json | null
+          payload?: Json | null
           phone_number?: string
           seat_id?: string | null
           status?: string | null

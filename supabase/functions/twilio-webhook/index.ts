@@ -250,7 +250,12 @@ serve(async (req) => {
         direction: 'inbound',
         message_body: messageBody,
         message_sid: messageSid,
-        message_type: 'binding'
+        message_type: 'binding',
+        payload: {
+          twilio_sid: messageSid,
+          seat_code: seatCode,
+          bound_successfully: true
+        }
       });
 
       // Send success message
@@ -359,7 +364,7 @@ serve(async (req) => {
       return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
 
-    // Log incoming message BEFORE session check to avoid catch-22
+      // Log incoming message BEFORE session check to avoid catch-22
     console.log('Logging incoming message to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
@@ -367,7 +372,11 @@ serve(async (req) => {
       direction: 'inbound',
       message_body: messageBody,
       message_sid: messageSid,
-      message_type: 'chat'
+      message_type: 'chat',
+      payload: {
+        twilio_sid: messageSid,
+        from: fromNumber
+      }
     });
 
     // Check 24-hour session window (now that message is logged)
@@ -453,24 +462,69 @@ serve(async (req) => {
     const aiResponse = await chatResponse.json();
     console.log('AI response received:', JSON.stringify(aiResponse, null, 2));
     
+    // Parse and clean AI streaming response
+    let cleanMessage = '';
+    const rawResponse = aiResponse.response || aiResponse.message || '';
+    
+    if (rawResponse.includes('text=') && rawResponse.includes('finish_reason=')) {
+      // Parse streaming format - extract only the actual text content
+      const lines = rawResponse.split('\n');
+      let messageText = '';
+      
+      for (const line of lines) {
+        if (line.startsWith('text=') && !line.includes('finish_reason=stop')) {
+          let textPart = line.substring(5); // Remove 'text=' prefix
+          if (textPart && textPart !== ';') {
+            // URL decode the text part
+            try {
+              textPart = decodeURIComponent(textPart);
+            } catch (e) {
+              // If decoding fails, use as-is
+            }
+            messageText += textPart;
+          }
+        }
+      }
+      
+      // Extract disclaimer if present at the start
+      const disclaimerMatch = rawResponse.match(/^([^\\n]*diagnose.*?lead\.)/);
+      const disclaimer = disclaimerMatch ? disclaimerMatch[1] : '';
+      
+      cleanMessage = disclaimer ? `${disclaimer}\n\n${messageText.trim()}` : messageText.trim();
+    } else {
+      cleanMessage = rawResponse;
+    }
+    
+    // Handle message length limits for WhatsApp (1600 chars max)
+    if (cleanMessage.length > 1500) {
+      cleanMessage = cleanMessage.substring(0, 1450) + '... (message truncated)';
+    }
+    
+    if (!cleanMessage) {
+      cleanMessage = 'Sorry, I had trouble processing your message.';
+    }
+    
     // Log AI response
     console.log('Logging AI response to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
       phone_number: phoneForStorage,
       direction: 'outbound',
-      message_body: aiResponse.response || aiResponse.message,
-      message_type: 'chat'
+      message_body: cleanMessage,
+      message_type: 'chat',
+      payload: {
+        raw_ai_response: rawResponse,
+        cleaned: true
+      }
     });
 
     // Send AI response back to user
     console.log('Sending AI response back to user...');
-    const messageToSend = aiResponse.response || aiResponse.message || 'Sorry, I had trouble processing your message.';
     await sendWhatsAppMessage(
       Deno.env.get('SUPABASE_URL') ?? '',
       req.headers.get('Authorization') ?? '',
       fromNumber,
-      { text: { body: messageToSend } } // Fixed: use 'text' field with 'body' property
+      { text: { body: cleanMessage } }
     );
 
     markProcessed(messageSid);
