@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhoneNumber, formatTwilioPhone } from "../_shared/phoneUtils.ts";
 
 serve(async (req) => {
   // Handle CORS
@@ -12,6 +13,20 @@ serve(async (req) => {
     const { showId, formData } = await req.json();
 
     console.log('Onboarding request received:', { showId, phoneNumber: formData.phone_number });
+
+    // Normalize the phone number
+    const phoneResult = normalizePhoneNumber(formData.phone_number);
+    console.log('Phone normalization result:', phoneResult);
+
+    if (!phoneResult.isValid) {
+      return new Response(
+        JSON.stringify({ error: `Invalid phone number format: ${phoneResult.error}` }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400 
+        }
+      );
+    }
 
     // Create a Supabase client with the service role key
     const supabaseAdmin = createClient(
@@ -25,12 +40,38 @@ serve(async (req) => {
       }
     );
 
-    // Find matching seat
-    const { data: seats, error: seatError } = await supabaseAdmin
-      .from('seats')
-      .select('*')
-      .eq('show_id', showId)
-      .eq('phone_number', formData.phone_number);
+    // Try multiple phone number formats to find matching seat
+    const phoneFormatsToTry = [
+      phoneResult.e164,              // +14153732865
+      formData.phone_number,         // Original input
+      phoneResult.e164!.substring(1), // 14153732865 (without +)
+    ];
+    
+    console.log('Trying phone formats:', phoneFormatsToTry);
+
+    let matchingSeat = null;
+    let seatError = null;
+
+    for (const phoneFormat of phoneFormatsToTry) {
+      const { data: seats, error } = await supabaseAdmin
+        .from('seats')
+        .select('*')
+        .eq('show_id', showId)
+        .eq('phone_number', phoneFormat);
+
+      if (error) {
+        seatError = error;
+        continue;
+      }
+
+      if (seats && seats.length > 0) {
+        matchingSeat = seats[0];
+        console.log(`Found matching seat with format "${phoneFormat}":`, matchingSeat.id);
+        break;
+      } else {
+        console.log(`No seat found with format "${phoneFormat}"`);
+      }
+    }
 
     if (seatError) {
       console.error('Seat lookup error:', seatError);
@@ -43,11 +84,27 @@ serve(async (req) => {
       );
     }
 
-    if (!seats || seats.length === 0) {
-      console.log('No matching seat found for phone:', formData.phone_number);
+    if (!matchingSeat) {
+      console.log('No matching seat found for any phone format. Tried:', phoneFormatsToTry);
+      
+      // For debugging, let's see what seats exist for this show
+      const { data: allSeats } = await supabaseAdmin
+        .from('seats')
+        .select('phone_number')
+        .eq('show_id', showId)
+        .limit(5);
+      
+      console.log('Sample seats in database for this show:', allSeats?.map(s => s.phone_number));
+      
       return new Response(
         JSON.stringify({ 
-          error: "This number isn't on the access list for this show. Please check with your company manager." 
+          error: "This number isn't on the access list for this show. Please check with your company manager.",
+          debug: {
+            originalPhone: formData.phone_number,
+            normalizedPhone: phoneResult.e164,
+            triedFormats: phoneFormatsToTry,
+            sampleSeats: allSeats?.map(s => s.phone_number)
+          }
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -56,7 +113,6 @@ serve(async (req) => {
       );
     }
 
-    const matchingSeat = seats[0];
     console.log('Found matching seat:', matchingSeat.id);
 
     // Generate temporary user ID for future linking
@@ -69,7 +125,7 @@ serve(async (req) => {
         user_id: tempUserId,
         first_name: formData.name.split(' ')[0] || formData.name,
         last_name: formData.name.split(' ').slice(1).join(' ') || '',
-        phone_number: formData.phone_number,
+        phone_number: phoneResult.e164,
         show_id: showId,
         tour_or_resident: formData.tour_or_resident,
         sleep_environment: {
