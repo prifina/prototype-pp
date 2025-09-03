@@ -469,40 +469,21 @@ serve(async (req) => {
     console.log('Raw AI response format:', rawResponse);
     
     // Extract disclaimer if present at the start
-    const disclaimerMatch = rawResponse.match(/^([^;]*diagnose[^;]*lead\.)/);
+    const disclaimerMatch = rawResponse.match(/^([^\\n]*diagnose.*?lead\.)/);
     const disclaimer = disclaimerMatch ? disclaimerMatch[1] : '';
     
-    if (rawResponse.includes(';finish_reason=')) {
-      // Parse streaming format where tokens are separated by ;finish_reason=null
-      // Example: ";finish_reason=nullHello;finish_reason=null!;finish_reason=null How..."
-      const tokens = rawResponse.split(';finish_reason=');
-      let messageText = '';
-      
-      for (let token of tokens) {
-        // Remove null/stop suffixes and clean the token
-        token = token.replace(/^null/, '').replace(/^stop$/, '');
-        
-        if (token && token.trim()) {
-          // URL decode the token
-          try {
-            token = decodeURIComponent(token);
-          } catch (e) {
-            // If decoding fails, use as-is
-          }
-          messageText += token;
-        }
-      }
-      
-      cleanMessage = messageText.trim();
-    } else if (rawResponse.includes('text=') && rawResponse.includes('finish_reason=')) {
-      // Fallback: Parse old streaming format with text= prefix
+    if (rawResponse.includes('text=')) {
+      // Parse streaming format with text= prefix (most common format)
+      // Example: "text=\ntext=Hello\ntext=!\ntext= How\ntext= can..."
       const lines = rawResponse.split('\n');
       let messageText = '';
       
       for (const line of lines) {
-        if (line.startsWith('text=') && !line.includes('finish_reason=stop')) {
+        if (line.startsWith('text=') && !line.includes('text=stop')) {
           let textPart = line.substring(5); // Remove 'text=' prefix
-          if (textPart && textPart !== ';') {
+          
+          // Skip empty text parts but preserve spaces
+          if (textPart !== undefined && textPart !== '' && textPart !== ';') {
             try {
               textPart = decodeURIComponent(textPart);
             } catch (e) {
@@ -514,11 +495,32 @@ serve(async (req) => {
       }
       
       cleanMessage = messageText.trim();
+    } else if (rawResponse.includes(';finish_reason=')) {
+      // Fallback: Parse format where tokens are separated by ;finish_reason=null
+      const tokens = rawResponse.split(';finish_reason=');
+      let messageText = '';
+      
+      for (let token of tokens) {
+        // Remove null/stop suffixes and clean the token
+        token = token.replace(/^null/, '').replace(/^stop$/, '');
+        
+        if (token && token.trim()) {
+          try {
+            token = decodeURIComponent(token);
+          } catch (e) {
+            // If decoding fails, use as-is
+          }
+          messageText += token;
+        }
+      }
+      
+      cleanMessage = messageText.trim();
     } else {
+      // Raw response without streaming format
       cleanMessage = rawResponse;
     }
     
-    // Add disclaimer back if it was found and message doesn't already start with it
+    // Add disclaimer if it was found and message doesn't already start with it
     if (disclaimer && !cleanMessage.startsWith(disclaimer)) {
       cleanMessage = disclaimer + '\n\n' + cleanMessage;
     }
@@ -558,7 +560,7 @@ serve(async (req) => {
     );
 
     markProcessed(messageSid);
-    return new Response('OK', { status: 200, headers: corsHeaders });
+    return new Response('', { status: 200, headers: corsHeaders });
 
   } catch (error) {
     console.error('Webhook error:', error);
