@@ -466,8 +466,36 @@ serve(async (req) => {
     let cleanMessage = '';
     const rawResponse = aiResponse.response || aiResponse.message || '';
     
-    if (rawResponse.includes('text=') && rawResponse.includes('finish_reason=')) {
-      // Parse streaming format - extract only the actual text content
+    console.log('Raw AI response format:', rawResponse);
+    
+    // Extract disclaimer if present at the start
+    const disclaimerMatch = rawResponse.match(/^([^;]*diagnose[^;]*lead\.)/);
+    const disclaimer = disclaimerMatch ? disclaimerMatch[1] : '';
+    
+    if (rawResponse.includes(';finish_reason=')) {
+      // Parse streaming format where tokens are separated by ;finish_reason=null
+      // Example: ";finish_reason=nullHello;finish_reason=null!;finish_reason=null How..."
+      const tokens = rawResponse.split(';finish_reason=');
+      let messageText = '';
+      
+      for (let token of tokens) {
+        // Remove null/stop suffixes and clean the token
+        token = token.replace(/^null/, '').replace(/^stop$/, '');
+        
+        if (token && token.trim()) {
+          // URL decode the token
+          try {
+            token = decodeURIComponent(token);
+          } catch (e) {
+            // If decoding fails, use as-is
+          }
+          messageText += token;
+        }
+      }
+      
+      cleanMessage = messageText.trim();
+    } else if (rawResponse.includes('text=') && rawResponse.includes('finish_reason=')) {
+      // Fallback: Parse old streaming format with text= prefix
       const lines = rawResponse.split('\n');
       let messageText = '';
       
@@ -475,7 +503,6 @@ serve(async (req) => {
         if (line.startsWith('text=') && !line.includes('finish_reason=stop')) {
           let textPart = line.substring(5); // Remove 'text=' prefix
           if (textPart && textPart !== ';') {
-            // URL decode the text part
             try {
               textPart = decodeURIComponent(textPart);
             } catch (e) {
@@ -486,14 +513,17 @@ serve(async (req) => {
         }
       }
       
-      // Extract disclaimer if present at the start
-      const disclaimerMatch = rawResponse.match(/^([^\\n]*diagnose.*?lead\.)/);
-      const disclaimer = disclaimerMatch ? disclaimerMatch[1] : '';
-      
-      cleanMessage = disclaimer ? `${disclaimer}\n\n${messageText.trim()}` : messageText.trim();
+      cleanMessage = messageText.trim();
     } else {
       cleanMessage = rawResponse;
     }
+    
+    // Add disclaimer back if it was found and message doesn't already start with it
+    if (disclaimer && !cleanMessage.startsWith(disclaimer)) {
+      cleanMessage = disclaimer + '\n\n' + cleanMessage;
+    }
+    
+    console.log('Cleaned message before sending:', cleanMessage);
     
     // Handle message length limits for WhatsApp (1600 chars max)
     if (cleanMessage.length > 1500) {
@@ -528,7 +558,7 @@ serve(async (req) => {
     );
 
     markProcessed(messageSid);
-    return new Response('Message processed', { status: 200, headers: corsHeaders });
+    return new Response('OK', { status: 200, headers: corsHeaders });
 
   } catch (error) {
     console.error('Webhook error:', error);
