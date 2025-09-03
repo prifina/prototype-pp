@@ -27,20 +27,31 @@ function isSeatExpired(seat: any): boolean {
   return new Date(seat.expires_at) < new Date();
 }
 
-// Check 24-hour session window
+// Check 24-hour session window - allows first message ever or recent activity
 async function checkSessionWindow(supabase: any, seatId: string): Promise<boolean> {
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   
+  // Get the most recent inbound message for this seat
   const { data } = await supabase
     .from('message_log')
     .select('created_at')
     .eq('seat_id', seatId)
     .eq('direction', 'inbound')
-    .gte('created_at', twentyFourHoursAgo.toISOString())
     .order('created_at', { ascending: false })
     .limit(1);
-    
-  return data && data.length > 0;
+  
+  // If no previous inbound messages, allow this one (first message ever)
+  if (!data || data.length === 0) {
+    console.log('No previous inbound messages found - allowing first message');
+    return true;
+  }
+  
+  // Check if last inbound message was within 24 hours
+  const lastMessageTime = new Date(data[0].created_at);
+  const withinWindow = lastMessageTime >= twentyFourHoursAgo;
+  console.log(`Last inbound message: ${lastMessageTime.toISOString()}, within 24h window: ${withinWindow}`);
+  
+  return withinWindow;
 }
 
 serve(async (req) => {
@@ -348,20 +359,7 @@ serve(async (req) => {
       return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
 
-    // Check 24-hour session window
-    const withinSessionWindow = await checkSessionWindow(supabase, activeSeat.id);
-    if (!withinSessionWindow) {
-      const template = getMessageTemplate(MessageType.SESSION_EXPIRED);
-      await sendWhatsAppMessage(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        req.headers.get('Authorization') ?? '',
-        fromNumber,
-        { text: { body: template.body || template.template } }
-      );
-      return new Response('Session expired', { status: 200, headers: corsHeaders });
-    }
-
-    // Log incoming message
+    // Log incoming message BEFORE session check to avoid catch-22
     console.log('Logging incoming message to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,
@@ -371,6 +369,20 @@ serve(async (req) => {
       message_sid: messageSid,
       message_type: 'chat'
     });
+
+    // Check 24-hour session window (now that message is logged)
+    const withinSessionWindow = await checkSessionWindow(supabase, activeSeat.id);
+    if (!withinSessionWindow) {
+      console.log('Session expired - sending restart message');
+      const template = getMessageTemplate(MessageType.SESSION_EXPIRED);
+      await sendWhatsAppMessage(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        req.headers.get('Authorization') ?? '',
+        fromNumber,
+        { text: { body: template.body || template.template } }
+      );
+      return new Response('Session expired', { status: 200, headers: corsHeaders });
+    }
 
     // Forward to AI chat service - fetch profile data first (with demo fallbacks)
     console.log('Fetching profile data for seat:', activeSeat.id, 'profile_id:', activeSeat.profile_id);
