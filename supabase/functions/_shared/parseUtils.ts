@@ -10,39 +10,27 @@ export function parseStreamingResponse(responseText: string): string {
     if (responseText.includes('text=')) {
       console.log('Detected text= prefix format, parsing...');
       
-      // Split by newlines and process each line
-      const lines = responseText.split('\n');
+      // Split by 'text=' and process each part
+      const parts = responseText.split('text=');
       
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      for (const part of parts) {
+        if (!part.trim()) continue;
         
-        // Handle lines that start with text=
-        if (line.startsWith('text=')) {
-          const content = line.substring(5); // Remove 'text='
-          
-          // Skip finish_reason lines
-          if (content.includes('finish_reason=')) continue;
-          
-          try {
-            // URL decode the content
-            const decoded = decodeURIComponent(content);
-            fullText += decoded;
-          } catch (e) {
-            // If decoding fails, use raw content
-            fullText += content;
-          }
-        }
-        // Handle other formats mixed in
-        else if (line.startsWith('data: ')) {
-          const dataStr = line.substring(6).trim();
-          if (dataStr === '[DONE]') break;
-          
-          try {
-            const data = JSON.parse(dataStr);
-            if (data.text) fullText += data.text;
-          } catch (e) {
-            // Ignore invalid JSON
-          }
+        // Extract content until next newline or end
+        let content = part.split('\n')[0].trim();
+        
+        // Skip finish_reason and stop tokens
+        if (content.includes('finish_reason=') || content === 'stop') continue;
+        
+        try {
+          // Replace + with space first (form encoding)
+          content = content.replace(/\+/g, ' ');
+          // URL decode the content
+          const decoded = decodeURIComponent(content);
+          fullText += decoded;
+        } catch (e) {
+          // If decoding fails, use raw content
+          fullText += content;
         }
       }
     }
