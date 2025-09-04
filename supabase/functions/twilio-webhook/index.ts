@@ -274,14 +274,27 @@ serve(async (req) => {
       return new Response('Seat bound successfully', { status: 200, headers: corsHeaders });
     }
 
-    // Handle regular chat messages - find seat for this phone (demo: allow active OR pending)
+    // Handle regular chat messages - find seat for this phone (prioritize active over pending)
     console.log('Looking for seat with phone:', phoneForStorage);
-    const { data: activeSeat } = await supabase
+    
+    // First try to find an active seat
+    let { data: activeSeat } = await supabase
       .from('seats')
       .select('*')
       .eq('phone_number', phoneForStorage)
-      .in('status', ['active', 'pending'])  // Demo: allow both active and pending seats
-      .single();
+      .eq('status', 'active')
+      .maybeSingle();
+
+    // If no active seat found, try pending seats
+    if (!activeSeat) {
+      const { data: pendingSeat } = await supabase
+        .from('seats')
+        .select('*')
+        .eq('phone_number', phoneForStorage)
+        .eq('status', 'pending')
+        .maybeSingle();
+      activeSeat = pendingSeat;
+    }
 
     console.log('Seat search result:', activeSeat);
 
