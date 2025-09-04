@@ -38,11 +38,37 @@ export function parseStreamingResponse(responseText: string): string {
         try {
           // Replace + with space first (form encoding)
           content = content.replace(/\+/g, ' ');
-          // URL decode the content
-          const decoded = decodeURIComponent(content);
+          
+          // Handle common URL encoding edge cases
+          let decoded = content;
+          if (content.includes('%')) {
+            try {
+              decoded = decodeURIComponent(content);
+            } catch (decodeError) {
+              console.log(`URL decode failed for "${content}": ${decodeError.message}`);
+              // Try manual decoding for common cases
+              decoded = content
+                .replace(/%20/g, ' ')     // space
+                .replace(/%2C/g, ',')     // comma  
+                .replace(/%3A/g, ':')     // colon
+                .replace(/%0A/g, '\n')    // newline
+                .replace(/%21/g, '!')     // exclamation
+                .replace(/%3F/g, '?')     // question mark
+                .replace(/%2E/g, '.')     // period
+                .replace(/%2D/g, '-')     // dash
+                .replace(/%5F/g, '_')     // underscore
+                .replace(/%28/g, '(')     // left parenthesis
+                .replace(/%29/g, ')')     // right parenthesis
+                .replace(/%2A/g, '*')     // asterisk
+                .replace(/%2F/g, '/');    // forward slash
+            }
+          }
+          
+          console.log(`Token processed: "${content}" -> "${decoded}"`);
           fullText += decoded;
         } catch (e) {
-          // If decoding fails, use raw content
+          console.error(`Failed to process token "${content}":`, e);
+          // If all else fails, use raw content but log the failure
           fullText += content;
         }
       }
