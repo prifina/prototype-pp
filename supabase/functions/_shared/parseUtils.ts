@@ -20,12 +20,20 @@ export function parseStreamingResponse(responseText: string): string {
         let content = part.split('\n')[0].trim();
         
         // Handle content with finish_reason - extract content before semicolon
+        let hadFinishReason = false;
         if (content.includes(';finish_reason=')) {
           content = content.split(';finish_reason=')[0];
+          hadFinishReason = true;
         }
         
-        // Skip only pure stop tokens or empty content
-        if (content === 'stop' || content === '') continue;
+        // Skip only pure stop tokens, but preserve empty content from valid tokens
+        if (content === 'stop') {
+          console.log(`Skipping stop token: "${content}"`);
+          continue;
+        }
+        
+        // Log what we're processing for debugging
+        console.log(`Processing token: original="${part.split('\n')[0].trim()}", extracted="${content}", hadFinishReason=${hadFinishReason}`);
         
         try {
           // Replace + with space first (form encoding)
