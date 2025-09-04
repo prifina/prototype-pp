@@ -19,8 +19,13 @@ export function parseStreamingResponse(responseText: string): string {
         // Extract content until next newline or end
         let content = part.split('\n')[0].trim();
         
-        // Skip finish_reason and stop tokens
-        if (content.includes('finish_reason=') || content === 'stop') continue;
+        // Handle content with finish_reason - extract content before semicolon
+        if (content.includes(';finish_reason=')) {
+          content = content.split(';finish_reason=')[0];
+        }
+        
+        // Skip only pure stop tokens or empty content
+        if (content === 'stop' || content === '') continue;
         
         try {
           // Replace + with space first (form encoding)
