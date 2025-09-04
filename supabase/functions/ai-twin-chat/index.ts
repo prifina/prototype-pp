@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
+import { parseStreamingResponse, splitMessageForWhatsApp, shouldAddDisclaimer } from '../_shared/parseUtils.ts';
 
 // AI Twin chat processor with guardrails for WhatsApp channel
 const corsHeaders = {
@@ -45,171 +47,9 @@ function hasRedFlags(message: string): boolean {
   return RED_FLAG_KEYWORDS.some(keyword => lowerMessage.includes(keyword));
 }
 
-// Parse SSE (Server-Sent Events) response from streaming APIs
-function parseStreamingResponse(responseText: string): string {
-  let fullText = '';
-  
-  try {
-    // Handle SSE format (data: {...})
-    if (responseText.includes('data: ')) {
-      const lines = responseText.split('\n');
-      
-      for (const line of lines) {
-        // Skip empty lines and event lines
-        if (!line.trim() || line.startsWith('event:')) continue;
-        
-        // Process data lines
-        if (line.startsWith('data: ')) {
-          const dataStr = line.substring(6).trim();
-          
-          // Skip [DONE] marker
-          if (dataStr === '[DONE]') break;
-          
-          try {
-            const data = JSON.parse(dataStr);
-            
-            // Handle OpenAI streaming format
-            if (data.choices && Array.isArray(data.choices)) {
-              for (const choice of data.choices) {
-                if (choice.delta?.content) {
-                  fullText += choice.delta.content;
-                } else if (choice.text) {
-                  fullText += choice.text;
-                }
-              }
-            }
-            // Handle simple format {text: "...", finish_reason: "..."}
-            else if (data.text) {
-              fullText += data.text;
-            }
-            // Handle content field
-            else if (data.content) {
-              fullText += data.content;
-            }
-            
-            // Stop if we hit a stop token
-            if (data.finish_reason === 'stop' || data.stop_reason === 'stop') {
-              break;
-            }
-          } catch (parseError) {
-            console.log('Failed to parse SSE data line:', dataStr);
-            // Sometimes the line might be plain text, try to extract it
-            if (!dataStr.includes('{') && dataStr.length > 0) {
-              fullText += dataStr;
-            }
-          }
-        }
-      }
-    }
-    // Handle non-SSE JSON response
-    else if (responseText.trim().startsWith('{')) {
-      const data = JSON.parse(responseText);
-      
-      // Try various common response formats
-      if (data.answer) fullText = data.answer;
-      else if (data.response) fullText = data.response;
-      else if (data.text) fullText = data.text;
-      else if (data.content) fullText = data.content;
-      else if (data.choices?.[0]?.message?.content) fullText = data.choices[0].message.content;
-      else if (data.choices?.[0]?.text) fullText = data.choices[0].text;
-    }
-    // Plain text response
-    else {
-      fullText = responseText;
-    }
-  } catch (error) {
-    console.error('Error parsing streaming response:', error);
-    // Fallback to raw text if parsing fails
-    fullText = responseText;
-  }
-  
-  // Clean up any remaining artifacts from parsing
-  fullText = fullText
-    .replace(/;finish_reason=[a-z_]*/gi, '') // Remove finish_reason artifacts
-    .replace(/\[DONE\]/g, '') // Remove [DONE] markers
-    .replace(/data:\s*/g, '') // Remove any remaining data: prefixes
-    .trim();
-  
-  return fullText;
-}
+// Note: parseStreamingResponse moved to shared utilities
 
-// Split long messages for WhatsApp while preserving formatting
-function splitMessageForWhatsApp(message: string, maxLength: number = WHATSAPP_MAX_LENGTH): string[] {
-  if (message.length <= maxLength) {
-    return [message];
-  }
-  
-  const messages: string[] = [];
-  const paragraphs = message.split('\n\n');
-  let currentMessage = '';
-  
-  for (const paragraph of paragraphs) {
-    // If a single paragraph is too long, split it by sentences
-    if (paragraph.length > maxLength) {
-      const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
-      
-      for (const sentence of sentences) {
-        if ((currentMessage + '\n\n' + sentence).length > maxLength - 50) { // Leave some buffer
-          if (currentMessage) {
-            messages.push(currentMessage.trim());
-            currentMessage = sentence;
-          } else {
-            // Single sentence is too long, hard split
-            const words = sentence.split(' ');
-            let tempMessage = '';
-            
-            for (const word of words) {
-              if ((tempMessage + ' ' + word).length > maxLength - 50) {
-                messages.push(tempMessage.trim());
-                tempMessage = word;
-              } else {
-                tempMessage = tempMessage ? tempMessage + ' ' + word : word;
-              }
-            }
-            
-            currentMessage = tempMessage;
-          }
-        } else {
-          currentMessage = currentMessage 
-            ? currentMessage + ' ' + sentence 
-            : sentence;
-        }
-      }
-    } else {
-      // Check if adding this paragraph would exceed the limit
-      const separator = currentMessage ? '\n\n' : '';
-      if ((currentMessage + separator + paragraph).length > maxLength - 50) {
-        if (currentMessage) {
-          messages.push(currentMessage.trim());
-        }
-        currentMessage = paragraph;
-      } else {
-        currentMessage = currentMessage 
-          ? currentMessage + separator + paragraph 
-          : paragraph;
-      }
-    }
-  }
-  
-  // Don't forget the last message
-  if (currentMessage) {
-    messages.push(currentMessage.trim());
-  }
-  
-  // Add continuation indicators
-  return messages.map((msg, index) => {
-    if (messages.length > 1) {
-      if (index === 0) {
-        return msg + '\n\n(1/' + messages.length + ')';
-      } else if (index === messages.length - 1) {
-        return '(' + (index + 1) + '/' + messages.length + ')\n\n' + msg;
-      } else {
-        return '(' + (index + 1) + '/' + messages.length + ')\n\n' + msg + '\n\n...';
-      }
-    }
-    return msg;
-  });
-}
+// Note: splitMessageForWhatsApp moved to shared utilities
 
 // Build context for AI Twin with size limits and normalization
 function buildAIContext(userContext: any, channel: string): string {
@@ -629,13 +469,16 @@ serve(async (req) => {
     
     console.log(`Final AI response [${requestId}]: ${aiResponse.length} chars`);
 
-    // Add daily disclaimer if needed
-    const today = new Date().toISOString().split('T')[0];
-    const needsDisclaimer = true; // For now, always add disclaimer to be safe
+    // Check if we should add disclaimer (once per 24h session)
+    const supabase = createClient(supabaseUrl, serviceKey);
+    const needsDisclaimer = await shouldAddDisclaimer(supabase, seat_id);
     
     let finalResponse = aiResponse;
     if (needsDisclaimer && finalResponse) {
       finalResponse = `${DAILY_DISCLAIMER}\n\n${finalResponse}`;
+      console.log(`Added disclaimer for seat ${seat_id} - new session started`);
+    } else {
+      console.log(`Skipping disclaimer for seat ${seat_id} - already sent in session`);
     }
 
     // Split message if it's too long for WhatsApp
