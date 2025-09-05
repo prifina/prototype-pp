@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
-import { parseStreamingResponse, splitMessageForWhatsApp, shouldAddDisclaimer } from '../_shared/parseUtils.ts';
+import { parseStreamingResponse, splitMessageForWhatsApp, shouldAddDisclaimer } from '../_shared/parseUtils';
 
 // AI Twin chat processor with guardrails for WhatsApp channel
 const corsHeaders = {
@@ -459,7 +459,13 @@ serve(async (req) => {
     }
 
     // Parse response using improved parser
-    let aiResponse = parseStreamingResponse(responseText);
+    let aiResponse;
+    try {
+      aiResponse = parseStreamingResponse(responseText);
+    } catch (parseError) {
+      console.error(`Error parsing response [${requestId}]:`, parseError);
+      aiResponse = null;
+    }
     
     // Fallback if no response received
     if (!aiResponse) {
@@ -471,7 +477,13 @@ serve(async (req) => {
 
     // Check if we should add disclaimer (once per 24h session)
     const supabase = createClient(supabaseUrl, serviceKey);
-    const needsDisclaimer = await shouldAddDisclaimer(supabase, seat_id);
+    let needsDisclaimer = false;
+    try {
+      needsDisclaimer = await shouldAddDisclaimer(supabase, seat_id);
+    } catch (disclaimerError) {
+      console.error(`Error checking disclaimer [${requestId}]:`, disclaimerError);
+      needsDisclaimer = false; // Default to not adding disclaimer on error
+    }
     
     let finalResponse = aiResponse;
     if (needsDisclaimer && finalResponse) {
@@ -482,7 +494,16 @@ serve(async (req) => {
     }
 
     // Split message if it's too long for WhatsApp
-    const messageParts = splitMessageForWhatsApp(finalResponse);
+    let messageParts;
+    try {
+      messageParts = splitMessageForWhatsApp(finalResponse);
+    } catch (splitError) {
+      console.error(`Error splitting message [${requestId}]:`, splitError);
+      // Fallback: return single message, truncated if needed
+      messageParts = [finalResponse.length > WHATSAPP_MAX_LENGTH ? 
+        finalResponse.substring(0, WHATSAPP_MAX_LENGTH - 3) + '...' : 
+        finalResponse];
+    }
     
     // Return the response (or first part if split)
     // Include all parts in response so webhook can send them sequentially
