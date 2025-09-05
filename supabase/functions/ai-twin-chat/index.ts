@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
-import { parseStreamingResponse, splitMessageForWhatsApp, shouldAddDisclaimer } from '../_shared/parseUtils';
+import { parseStreamingResponse, splitMessageForWhatsApp, shouldAddDisclaimer } from '../_shared/parseUtils.ts';
 
 // AI Twin chat processor with guardrails for WhatsApp channel
 const corsHeaders = {
