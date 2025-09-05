@@ -287,7 +287,7 @@ serve(async (req) => {
             body: JSON.stringify({
               to: user_context.phone_e164,
               template: 'red_flag_escalation_v1',
-              variables: ['support@productionphysio.com', 'support@productionphysio.com']
+              variables: ['support@productionphysiotherapy.com', 'support@productionphysiotherapy.com']
             })
           });
         } catch (e) {
@@ -327,7 +327,7 @@ serve(async (req) => {
     
     if (!supabaseUrl || !serviceKey) {
       console.error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured - returning fallback');
-      const fallbackResponse = "I'm having technical difficulties right now. Please contact support@productionphysio.com for immediate assistance.";
+      const fallbackResponse = "I'm having technical difficulties right now. Please contact support@productionphysiotherapy.com for immediate assistance.";
         
       return new Response(JSON.stringify({ 
         response: fallbackResponse,
@@ -441,7 +441,7 @@ serve(async (req) => {
       console.error(`Amplify API error [${requestId}]: ${response.status} ${response.statusText}`);
       console.error(`Response body [${requestId}]:`, bodyPreview);
       
-      const fallbackResponse = "I'm experiencing technical difficulties. Please contact support@productionphysio.com for assistance.";
+      const fallbackResponse = "I'm experiencing technical difficulties. Please contact support@productionphysiotherapy.com for assistance.";
       
       return new Response(JSON.stringify({ 
         error: 'Upstream API error',
@@ -508,7 +508,7 @@ serve(async (req) => {
     }
     
     // Provide helpful fallback response
-    const fallbackResponse = `I'm experiencing technical difficulties. Please contact support@productionphysio.com with error ID: ${errorId}`;
+    const fallbackResponse = `I'm experiencing technical difficulties. Please contact support@productionphysiotherapy.com with error ID: ${errorId}`;
     
     return new Response(JSON.stringify({ 
       error: 'Failed to process chat',

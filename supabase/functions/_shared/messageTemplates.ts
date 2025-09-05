@@ -38,14 +38,14 @@ export const MESSAGE_TEMPLATES: Record<string, MessageTemplate> = {
   
   access_denied_v1: {
     category: 'UTILITY', 
-    template: "This number isn't enabled for {{1}}. Please contact {{2}} to request access or email support@productionphysio.com.",
+    template: "This number isn't enabled for {{1}}. Please contact {{2}} to request access or email support@productionphysiotherapy.com.",
     description: "Sent when phone number has no active seat"
   },
   
   // Binding Security
   seat_mismatch_v1: {
     category: 'UTILITY',
-    template: "This access code is linked to another number. Please contact support@productionphysio.com if you believe this is an error.",
+    template: "This access code is linked to another number. Please contact support@productionphysiotherapy.com if you believe this is an error.",
     description: "Sent when phone doesn't match the pre-loaded phone for that seat code"
   },
   
