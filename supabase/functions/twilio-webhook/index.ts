@@ -1,6 +1,11 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.9';
-import { validateTwilioSignature, checkRateLimit, checkIdempotency, markProcessed, extractSeatCode } from '../_shared/twilioUtils.ts';
+import { 
+  validateTwilioSignature, 
+  checkRateLimit, 
+  checkIdempotency, 
+  markProcessed
+} from '../_shared/twilioUtils.ts';
 import { normalizePhoneNumber } from '../_shared/phoneUtils.ts';
 import { getMessageTemplate, MessageType } from '../_shared/messageTemplates.ts';
 
@@ -168,113 +173,12 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_URL') ?? '',
         req.headers.get('Authorization') ?? '',
         fromNumber,
-        { text: { body: 'Sandbox activated! Now send your seat code in the format: seat:YOUR_CODE' } }
+        { text: { body: 'Sandbox activated! Send any message to get started with your AI Performance Assistant.' } }
       );
       return new Response('Sandbox activation acknowledged', { status: 200, headers: corsHeaders });
     }
 
-    // Extract seat binding code
-    const seatCode = extractSeatCode(messageBody);
-    
-    if (seatCode) {
-      console.log('Processing seat binding for code:', seatCode);
-      
-      // Find the seat by code
-      const { data: seat } = await supabase
-        .from('seats')
-        .select('*')
-        .eq('seat_code', seatCode.toUpperCase())
-        .eq('status', 'active')
-        .single();
-
-      if (!seat) {
-        const template = getMessageTemplate(MessageType.SEAT_NOT_FOUND);
-        await sendWhatsAppMessage(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          req.headers.get('Authorization') ?? '',
-          fromNumber,
-        { text: { body: template.body || template.template } }
-        );
-        return new Response('Seat not found', { status: 200, headers: corsHeaders });
-      }
-
-      // Check if seat is expired
-      if (isSeatExpired(seat)) {
-        const template = getMessageTemplate(MessageType.SEAT_EXPIRED);
-        await sendWhatsAppMessage(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          req.headers.get('Authorization') ?? '',
-          fromNumber,
-        { text: { body: template.body || template.template } }
-        );
-        return new Response('Seat expired', { status: 200, headers: corsHeaders });
-      }
-
-      // Check if seat already bound to different phone
-      if (seat.phone_number && seat.phone_number !== phoneForStorage) {
-        const template = getMessageTemplate(MessageType.SEAT_ALREADY_BOUND);
-        await sendWhatsAppMessage(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          req.headers.get('Authorization') ?? '',
-          fromNumber,
-        { text: { body: template.body || template.template } }
-        );
-        return new Response('Seat already bound', { status: 200, headers: corsHeaders });
-      }
-
-      // Bind seat to phone number
-      const { error: updateError } = await supabase
-        .from('seats')
-        .update({ 
-          phone_number: phoneForStorage,
-          bound_at: new Date().toISOString()
-        })
-        .eq('id', seat.id);
-
-      if (updateError) {
-        console.error('Error binding seat:', updateError);
-        const template = getMessageTemplate(MessageType.SYSTEM_ERROR);
-        await sendWhatsAppMessage(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          req.headers.get('Authorization') ?? '',
-          fromNumber,
-        { text: { body: template.body || template.template } }
-        );
-        return new Response('Database error', { status: 500, headers: corsHeaders });
-      }
-
-      // Log the binding
-      await supabase.from('message_log').insert({
-        seat_id: seat.id,
-        phone_number: phoneForStorage,
-        direction: 'inbound',
-        message_body: messageBody,
-        message_sid: messageSid,
-        message_type: 'binding',
-        payload: {
-          twilio_sid: messageSid,
-          seat_code: seatCode,
-          bound_successfully: true
-        }
-      });
-
-      // Send success message
-      const template = getMessageTemplate(MessageType.SEAT_BOUND_SUCCESS, { 
-        profileName: seat.profile_name || 'AI Twin'
-      });
-      
-      await sendWhatsAppMessage(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        req.headers.get('Authorization') ?? '',
-        fromNumber,
-        { text: { body: template.body || template.template } }
-      );
-
-      markProcessed(messageSid);
-      return new Response('Seat bound successfully', { status: 200, headers: corsHeaders });
-    }
-
-    // Handle regular chat messages - find seat for this phone (prioritize active over pending)
+    // Handle chat messages - find seat for this phone (prioritize active over pending)
     console.log('Looking for seat with phone:', phoneForStorage);
     
     // First try to find an active seat
@@ -298,9 +202,10 @@ serve(async (req) => {
 
     console.log('Seat search result:', activeSeat);
 
+    // If no seat found, attempt auto-binding to available seat
     if (!activeSeat) {
-      console.log('No seat found for phone, checking if seat exists with different phone...');
-      // Demo: Also check if there's ANY seat for this phone number that's not bound yet
+      console.log('No seat found for phone, attempting auto-binding...');
+      // Check if there's any unbound seat available for auto-binding
       const { data: unboundSeat } = await supabase
         .from('seats')
         .select('*')
@@ -310,17 +215,30 @@ serve(async (req) => {
         .single();
 
       if (unboundSeat) {
-        console.log('Found unbound seat, auto-binding for demo:', unboundSeat.id);
-        // Auto-bind for demo purposes
-        await supabase
+        console.log('Found unbound seat, auto-binding:', unboundSeat.id);
+        // Auto-bind the seat to this phone number
+        const { error: bindError } = await supabase
           .from('seats')
           .update({ 
             phone_number: phoneForStorage,
-            bound_at: new Date().toISOString()
+            bound_at: new Date().toISOString(),
+            status: 'active'
           })
           .eq('id', unboundSeat.id);
+
+        if (bindError) {
+          console.error('Error auto-binding seat:', bindError);
+          const template = getMessageTemplate(MessageType.SYSTEM_ERROR);
+          await sendWhatsAppMessage(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            req.headers.get('Authorization') ?? '',
+            fromNumber,
+            { text: { body: template.body || template.template } }
+          );
+          return new Response('Auto-binding failed', { status: 500, headers: corsHeaders });
+        }
         
-        // Continue with this seat
+        // Get the bound seat for the rest of the flow
         const { data: boundSeat } = await supabase
           .from('seats')
           .select('*')
@@ -329,13 +247,38 @@ serve(async (req) => {
         
         if (boundSeat) {
           console.log('Auto-bound seat successfully, continuing with chat...');
-          // Set activeSeat to the bound seat for the rest of the flow
-          Object.assign(activeSeat || {}, boundSeat);
+          activeSeat = boundSeat;
+
+          // Log binding event
+          await supabase.from('message_log').insert({
+            seat_id: boundSeat.id,
+            phone_number: phoneForStorage,
+            direction: 'inbound',
+            message_body: messageBody,
+            message_sid: messageSid,
+            message_type: 'binding',
+            payload: {
+              twilio_sid: messageSid,
+              auto_bound: true
+            }
+          });
+
+          // Send success message
+          const template = getMessageTemplate(MessageType.SEAT_BOUND_SUCCESS, { 
+            profileName: boundSeat.profile_name || 'AI Performance Assistant'
+          });
+          
+          await sendWhatsAppMessage(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            req.headers.get('Authorization') ?? '',
+            fromNumber,
+            { text: { body: template.body || template.template } }
+          );
         }
       }
 
       if (!activeSeat) {
-        console.log('No active/pending seat found for phone');
+        console.log('No seats available for auto-binding');
         const template = getMessageTemplate(MessageType.NO_ACTIVE_SEAT);
         await sendWhatsAppMessage(
           Deno.env.get('SUPABASE_URL') ?? '',
@@ -343,7 +286,7 @@ serve(async (req) => {
           fromNumber,
           { text: { body: template.body || template.template } }
         );
-        return new Response('No active seat', { status: 200, headers: corsHeaders });
+        return new Response('No seats available', { status: 200, headers: corsHeaders });
       }
     }
 
@@ -377,7 +320,7 @@ serve(async (req) => {
       return new Response('Seat revoked', { status: 200, headers: corsHeaders });
     }
 
-      // Log incoming message BEFORE session check to avoid catch-22
+    // Log incoming message BEFORE session check to avoid catch-22
     console.log('Logging incoming message to database...');
     await supabase.from('message_log').insert({
       seat_id: activeSeat.id,

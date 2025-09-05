@@ -142,34 +142,3 @@ export function markProcessed(messageSid: string): void {
     idempotencyStore.set(key, existing);
   }
 }
-
-/**
- * Extract seat code from message body
- * Supports various formats: "seat:CODE", "SEAT:CODE", or just "CODE" if it matches pattern
- */
-export function extractSeatCode(message: string): string | null {
-  if (!message) return null;
-  
-  const normalizedMessage = message.trim().toUpperCase();
-  
-  // Skip sandbox activation message
-  if (normalizedMessage.includes('JOIN CLOSER-SEND')) {
-    return null;
-  }
-  
-  // Primary pattern: seat:CODE or SEAT:CODE
-  const seatCodePattern = /seat:([A-Z0-9-]+)/i;
-  const match = message.match(seatCodePattern);
-  if (match) {
-    return match[1].toUpperCase();
-  }
-  
-  // Secondary pattern: standalone code that looks like a seat code
-  const standalonePattern = /^(SC-[A-Z0-9]+-[A-Z])$/i;
-  const standaloneMatch = message.trim().toUpperCase().match(standalonePattern);
-  if (standaloneMatch) {
-    return standaloneMatch[1];
-  }
-  
-  return null;
-}

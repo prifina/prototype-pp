@@ -25,15 +25,15 @@ export const MESSAGE_TEMPLATES: Record<string, MessageTemplate> = {
   // Success Messages
   SEAT_BOUND_SUCCESS: {
     category: 'UTILITY',
-    template: "Successfully connected with the AI Performance Assistant. What do you want to discuss?",
-    body: "Successfully connected with the AI Performance Assistant. What do you want to discuss?",
-    description: "Sent when seat binding is successful"
+    template: "Welcome! You're now connected with the AI Performance Assistant. What would you like to discuss?",
+    body: "Welcome! You're now connected with the AI Performance Assistant. What would you like to discuss?",
+    description: "Sent when user is automatically connected"
   },
   // Onboarding & Access
   onboarding_help_v1: {
     category: 'UTILITY',
-    template: "Hi! To start using your AI Physio Twin, please complete onboarding at {{1}} and then message us here with your access code.",
-    description: "Sent when someone uses an invalid seat code"
+    template: "Hi! To start using your AI Performance Assistant, please complete onboarding at {{1}}.",
+    description: "Sent when onboarding help is needed"
   },
   
   access_denied_v1: {
@@ -126,9 +126,9 @@ export const MESSAGE_TEMPLATES: Record<string, MessageTemplate> = {
   
   NO_ACTIVE_SEAT: {
     category: 'UTILITY',
-    template: "This number isn't enabled. Please contact your company manager to request access.",
-    body: "This number isn't enabled. Please contact your company manager to request access.",
-    description: "Sent when phone has no active seat"
+    template: "Sorry, no seats are currently available. Please contact your company manager for assistance.",
+    body: "Sorry, no seats are currently available. Please contact your company manager for assistance.",
+    description: "Sent when no seats are available for auto-binding"
   },
   
   SESSION_EXPIRED: {
